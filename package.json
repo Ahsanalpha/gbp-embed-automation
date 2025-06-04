@@ -1,0 +1,23 @@
+{
+  "name": "gbp-iframe-scraper",
+  "version": "1.0.0",
+  "description": "Web scraper to find Google Business Profile iframe embeds in websites",
+  "main": "scraper.js",
+  "scripts": {
+    "start": "node scraper.js",
+    "test": "node test-scraper.js"
+  },
+  "dependencies": {
+    "csv-parser": "^3.2.0",
+    "csv-writer": "^1.6.0",
+    "puppeteer": "^21.11.0"
+  },
+  "keywords": [
+    "web-scraping",
+    "google-business-profile",
+    "iframe",
+    "puppeteer"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
