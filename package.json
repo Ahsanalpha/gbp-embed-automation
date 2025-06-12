@@ -4,7 +4,7 @@
   "description": "Web scraper to find Google Business Profile iframe embeds in websites",
   "main": "scraper.js",
   "scripts": {
-    "start": "node scraper.js",
+    "start": "node scraper/scraper.js",
     "test": "node test-scraper.js"
   },
   "dependencies": {

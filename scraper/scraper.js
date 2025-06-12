@@ -1,9 +1,11 @@
+//scraper.js
+
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 const csv = require("csv-parser");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 const path = require("path");
-const { InitializeGBPIframeProcessor } = require("./render_iframes_to_images.js");
+const { InitializeGBPIframeProcessor } = require("../screenshot_services/gbp_embed_screenshot.js");
 
 class GBPIframeScraper {
   constructor(options = {}) {
@@ -227,7 +229,7 @@ class GBPIframeScraper {
   /**
    * Save results to CSV file
    */
-  async saveResultsToCsv(outputPath = "gbp_scraping_results.csv") {
+  async saveResultsToCsv(outputPath) {
     const csvWriter = createCsvWriter({
       path: outputPath,
       header: [
@@ -245,23 +247,10 @@ class GBPIframeScraper {
       return result.iframe_src.length > 0;
     });
 
-    const filteredCsvWriter = createCsvWriter({
-      path: "gbp_only_records.csv",
-      header: [
-        { id: "url", title: "URL" },
-        { id: "iframe_src", title: "GBP_Iframe_Source" },
-        { id: "found_at", title: "Scraped_At" },
-        { id: "status", title: "Status" },
-      ],
-    });
-
-    await filteredCsvWriter.writeRecords(this.onlyGBPSuccessRecords);
-    console.log(`✓ GBP-only results saved to gbp_only_records.csv`);
-
     // Also save errors if any
     if (this.errors.length > 0) {
       const errorCsvWriter = createCsvWriter({
-        path: "gbp_scraping_errors.csv",
+        path: "./gbp_logs/gbp_scraping_errors.csv",
         header: [
           { id: "url", title: "URL" },
           { id: "error", title: "Error" },
@@ -277,7 +266,7 @@ class GBPIframeScraper {
   /**
    * Main scraping function
    */
-  async scrape(input, options = {}) {
+  async scrape(input,options = {}) {
     let urls = [];
 
     // Determine input type and get URLs
@@ -357,7 +346,7 @@ class GBPIframeScraper {
       if (this.onlyGBPSuccessRecords.length > 0) {
         console.log(`\nFound ${this.onlyGBPSuccessRecords.length} GBP records. Starting screenshot rendering...`);
         try {
-          await InitializeGBPIframeProcessor("./gbp_only_records.csv");
+          await InitializeGBPIframeProcessor("./gbp_output_data/gbp_only_records.csv");
         } catch (renderError) {
           console.error("Screenshot rendering failed:", renderError.message);
           console.log("Scraping completed successfully, but screenshot rendering encountered errors.");
@@ -385,15 +374,14 @@ async function main() {
 
   try {
     // Scrape from CSV file
-    await scraper.scrape("internal_all.csv", {
+    await scraper.scrape("gbp_input_data/internal_all.csv", {
       columnName: "Address",
-      outputPath: "results.csv",
+      outputPath: "gbp_output_data/gbp_only_records.csv",
     });
 
     console.log("\n🎉 Process completed successfully!");
     console.log("📁 Check the following files for results:");
-    console.log("   - results.csv (all scraping results)");
-    console.log("   - gbp_only_records.csv (GBP records only)");
+    console.log("   - gbp_only_records.csv (all scraping results)");
     console.log("   - gbp_screenshots/ folder (screenshots of GBP iframes)");
     console.log("   - gbp_screenshot_results.csv (screenshot processing results)");
 
