@@ -366,6 +366,12 @@ class GBPIframeScraper {
  * Main execution function
  */
 async function InitializeGBPIframeScraper() {
+  // Check if gbp_output_data directory exists, create if it doesn't
+  if (!fs.existsSync("gbp_output_data")) {
+    fs.mkdirSync("gbp_output_data");
+    console.log("📁 Created gbp_output_data directory");
+  }
+
   const scraper = new GBPIframeScraper({
     headless: true,
     timeout: 30000,
