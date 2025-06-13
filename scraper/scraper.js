@@ -365,7 +365,7 @@ class GBPIframeScraper {
 /**
  * Main execution function
  */
-async function main() {
+async function InitializeGBPIframeScraper() {
   const scraper = new GBPIframeScraper({
     headless: true,
     timeout: 30000,
@@ -392,9 +392,9 @@ async function main() {
 }
 
 // Export for use as module
-module.exports = { GBPIframeScraper };
+module.exports = { InitializeGBPIframeScraper };
 
 // Run if called directly
 if (require.main === module) {
-  main();
+  InitializeGBPIframeScraper();
 }
