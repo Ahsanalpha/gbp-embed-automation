@@ -1,4 +1,4 @@
-//scraper.js
+// enhanced_scraper.js
 
 const puppeteer = require("puppeteer");
 const fs = require("fs");
@@ -6,23 +6,26 @@ const csv = require("csv-parser");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 const path = require("path");
 const { InitializeGBPIframeProcessor } = require("../screenshot_services/gbp_embed_screenshot.js");
+const { EnhancedGBPUrlDecoder } = require("./utils/gbp_url_decoder.js"); // Import the decoder
+const { InitializeGoogleMapsDirectionsScreenshot } = require("../screenshot_services/gbp_location_screenshot.js");
 
-class GBPIframeScraper {
+class EnhancedGBPIframeScraper {
   constructor(options = {}) {
     this.options = {
-      headless: options.headless !== false, // Default to headless
-      // headless: false, // Default to headless
+      headless: options.headless !== false,
       timeout: options.timeout || 30000,
       waitForNetworkIdle: options.waitForNetworkIdle || 2000,
       maxRetries: options.maxRetries || 3,
-      delay: options.delay || 1000, // Delay between requests
+      delay: options.delay || 1000,
       userAgent:
         options.userAgent ||
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      enableDecoding: options.enableDecoding !== false, // Enable decoding by default
     };
     this.results = [];
     this.errors = [];
     this.onlyGBPSuccessRecords = [];
+    this.decoder = new EnhancedGBPUrlDecoder(); // Initialize decoder
   }
 
   /**
@@ -41,7 +44,7 @@ class GBPIframeScraper {
 
   normalizeUrl(url) {
     if (!url || typeof url !== "string") return "";
-    return url.trim().replace(/^["']|["']$/g, ""); // Remove leading/trailing single or double quotes
+    return url.trim().replace(/^["']|["']$/g, "");
   }
 
   /**
@@ -50,7 +53,6 @@ class GBPIframeScraper {
   extractIframeSources(html) {
     const iframeSources = [];
 
-    // Multiple regex patterns to catch different iframe formats
     const iframePatterns = [
       /<iframe[^>]+src\s*=\s*["']([^"']+)["'][^>]*>/gi,
       /<iframe[^>]+src\s*=\s*([^\s>]+)[^>]*>/gi,
@@ -66,7 +68,7 @@ class GBPIframeScraper {
       }
     });
 
-    return [...new Set(iframeSources)]; // Remove duplicates
+    return [...new Set(iframeSources)];
   }
 
   /**
@@ -76,11 +78,9 @@ class GBPIframeScraper {
     const page = await browser.newPage();
 
     try {
-      // Set user agent and viewport
       await page.setUserAgent(this.options.userAgent);
       await page.setViewport({ width: 1366, height: 768 });
 
-      // Block unnecessary resources to speed up loading
       await page.setRequestInterception(true);
       page.on("request", (req) => {
         const resourceType = req.resourceType();
@@ -93,22 +93,16 @@ class GBPIframeScraper {
 
       console.log(`Scraping: ${url}`);
 
-      // Navigate to the page
       await page.goto(url, {
         waitUntil: "networkidle2",
         timeout: this.options.timeout,
       });
 
-      // Wait for any dynamic content to load
       await page.waitForTimeout(this.options.waitForNetworkIdle);
 
-      // Get the full HTML content
       const html = await page.content();
-
-      // Extract iframe sources using regex
       const regexSources = this.extractIframeSources(html);
 
-      // Also use Puppeteer to find iframes in the DOM
       const domSources = await page.evaluate(() => {
         const iframes = document.querySelectorAll("iframe");
         const sources = [];
@@ -123,7 +117,6 @@ class GBPIframeScraper {
         return sources;
       });
 
-      // Combine and filter results
       const allSources = [...regexSources, ...domSources];
       const gbpSources = allSources.filter((src) =>
         this.isGoogleMapsEmbed(src)
@@ -132,15 +125,13 @@ class GBPIframeScraper {
 
       if (uniqueSources.length > 0) {
         console.log(`✓ Found ${uniqueSources.length} GBP iframe(s) on ${url}`);
-        // Extract full iframe elements via DOM for matching GBP src
+        
         const matchingIframes = await page.evaluate(() => {
           const iframes = Array.from(document.querySelectorAll("iframe"));
           return iframes
             .map((iframe) => {
               const src = iframe.getAttribute("src") || "";
-              return {
-                src,
-              };
+              return { src };
             })
             .filter(
               ({ src }) =>
@@ -152,12 +143,29 @@ class GBPIframeScraper {
         matchingIframes.forEach(({ src }) => {
           const normalizedURL = this.normalizeUrl(src);
           if (src.length > 0) {
-            this.results.push({
+            // Decode GBP URL if decoding is enabled
+            let decodedInfo = {};
+            if (this.options.enableDecoding) {
+              decodedInfo = this.decoder.decodeGBPUrl(normalizedURL);
+            }
+
+            // Create enhanced result object
+            const result = {
               url: url,
               iframe_src: normalizedURL,
               found_at: new Date().toISOString(),
               status: "success",
-            });
+              // Add decoded information
+              business_name: this.options.enableDecoding ? decodedInfo.businessName || '' : '',
+              search_url: this.options.enableDecoding ? decodedInfo.searchUrl || '' : '',
+              // place_id: this.options.enableDecoding ? decodedInfo.placeId || '' : '',
+              // latitude: this.options.enableDecoding ? decodedInfo.coordinates?.lat || '' : '',
+              // longitude: this.options.enableDecoding ? decodedInfo.coordinates?.lng || '' : '',
+              decoding_status: this.options.enableDecoding ? (decodedInfo.error ? 'Error' : 'Success') : 'Disabled',
+              decoding_error: this.options.enableDecoding ? decodedInfo.error || '' : ''
+            };
+
+            this.results.push(result);
           }
         });
       } else {
@@ -167,6 +175,13 @@ class GBPIframeScraper {
           iframe_src: "",
           found_at: new Date().toISOString(),
           status: "no_iframe_found",
+          business_name: '',
+          search_url: '',
+          // place_id: '',
+          // latitude: '',
+          // longitude: '',
+          decoding_status: 'N/A',
+          decoding_error: ''
         });
       }
     } catch (error) {
@@ -182,6 +197,13 @@ class GBPIframeScraper {
         iframe_src: "",
         found_at: new Date().toISOString(),
         status: "error",
+        business_name: '',
+        search_url: '',
+        // place_id: '',
+        // latitude: '',
+        // longitude: '',
+        decoding_status: 'Error',
+        decoding_error: error.message
       });
     } finally {
       await page.close();
@@ -205,7 +227,6 @@ class GBPIframeScraper {
         .on("data", (row) => {
           const url = row[Object.keys(row)[0]];
           if (url && url.trim()) {
-            // Ensure URL has protocol
             let cleanUrl = url.trim();
             if (
               !cleanUrl.startsWith("http://") &&
@@ -227,7 +248,7 @@ class GBPIframeScraper {
   }
 
   /**
-   * Save results to CSV file
+   * Save enhanced results to CSV file
    */
   async saveResultsToCsv(outputPath) {
     const csvWriter = createCsvWriter({
@@ -235,13 +256,20 @@ class GBPIframeScraper {
       header: [
         { id: "url", title: "URL" },
         { id: "iframe_src", title: "GBP_Iframe_Source" },
+        { id: "business_name", title: "Business_Name" },
+        { id: "search_url", title: "Search_URL" },
+        // { id: "place_id", title: "Place_ID" },
+        // { id: "latitude", title: "Latitude" },
+        // { id: "longitude", title: "Longitude" },
         { id: "found_at", title: "Scraped_At" },
         { id: "status", title: "Status" },
+        { id: "decoding_status", title: "Decoding_Status" },
+        { id: "decoding_error", title: "Decoding_Error" },
       ],
     });
 
     await csvWriter.writeRecords(this.results);
-    console.log(`\n✓ Results saved to ${outputPath}`);
+    console.log(`\n✅ Enhanced results saved to ${outputPath}`);
 
     this.onlyGBPSuccessRecords = this.results.filter((result) => {
       return result.iframe_src.length > 0;
@@ -259,44 +287,39 @@ class GBPIframeScraper {
       });
 
       await errorCsvWriter.writeRecords(this.errors);
-      console.log(`✓ Errors saved to gbp_scraping_errors.csv`);
+      console.log(`✅ Errors saved to gbp_scraping_errors.csv`);
     }
   }
 
   /**
-   * Main scraping function
+   * Main scraping function with enhanced decoding
    */
-  async scrape(input,options = {}) {
+  async scrape(input, options = {}) {
     let urls = [];
 
-    // Determine input type and get URLs
     if (typeof input === "string") {
       if (input.endsWith(".csv")) {
-        // Input is CSV file
-        urls = await this.readUrlsFromCsv(
-          input,
-          options.columnName || "Address"
-        );
+        urls = await this.readUrlsFromCsv(input, options.columnName || "Address");
       } else {
-        // Input is a single URL
         urls = [input];
       }
     } else if (Array.isArray(input)) {
-      // Input is an array of URLs
       urls = input;
     } else {
-      throw new Error(
-        "Input must be a URL string, CSV file path, or array of URLs"
-      );
+      throw new Error("Input must be a URL string, CSV file path, or array of URLs");
     }
 
     if (urls.length === 0) {
       throw new Error("No URLs found to scrape");
     }
 
-    console.log(`Starting to scrape ${urls.length} URL(s)...`);
+    console.log(`🚀 Starting to scrape ${urls.length} URL(s)...`);
+    if (this.options.enableDecoding) {
+      console.log(`📋 GBP URL decoding is ENABLED`);
+    } else {
+      console.log(`📋 GBP URL decoding is DISABLED`);
+    }
 
-    // Launch browser
     const browser = await puppeteer.launch({
       headless: this.options.headless,
       args: [
@@ -308,8 +331,7 @@ class GBPIframeScraper {
     });
 
     try {
-      // Process URLs with concurrency control
-      const concurrency = 3; // Process 3 URLs at a time
+      const concurrency = 3;
 
       for (let i = 0; i < urls.length; i += concurrency) {
         const batch = urls.slice(i, i + concurrency);
@@ -317,42 +339,43 @@ class GBPIframeScraper {
 
         await Promise.all(promises);
 
-        // Add delay between batches
         if (i + concurrency < urls.length) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, this.options.delay)
-          );
+          await new Promise((resolve) => setTimeout(resolve, this.options.delay));
         }
       }
 
-      // Save results
       await this.saveResultsToCsv(options.outputPath);
 
-      // Print summary
-      const successCount = this.results.filter(
-        (r) => r.status === "success"
-      ).length;
+      // Enhanced summary
+      const successCount = this.results.filter((r) => r.status === "success").length;
       const errorCount = this.errors.length;
+      const decodedCount = this.results.filter((r) => r.decoding_status === "Success").length;
 
-      console.log("\n=== SCRAPING SUMMARY ===");
+      console.log("\n=== ENHANCED SCRAPING SUMMARY ===");
       console.log(`Total URLs processed: ${urls.length}`);
       console.log(`GBP iframes found: ${successCount}`);
+      console.log(`Business names decoded: ${decodedCount}`);
       console.log(`Errors encountered: ${errorCount}`);
-      console.log(
-        `Results saved to: ${options.outputPath || "gbp_scraping_results.csv"}`
-      );
+      console.log(`Results saved to: ${options.outputPath || "gbp_enhanced_results.csv"}`);
 
       // Trigger screenshot rendering if GBP records were found
       if (this.onlyGBPSuccessRecords.length > 0) {
-        console.log(`\nFound ${this.onlyGBPSuccessRecords.length} GBP records. Starting screenshot rendering...`);
+        console.log(`\n📸 Found ${this.onlyGBPSuccessRecords.length} GBP records. Starting screenshot rendering...`);
         try {
-          await InitializeGBPIframeProcessor("./gbp_output_data/gbp_only_records.csv");
+          await Promise.allSettled(
+            [
+            InitializeGBPIframeProcessor(options.outputPath || "./gbp_output_data/gbp_enhanced_records.csv"),
+            InitializeGoogleMapsDirectionsScreenshot("./gbp_output_data/gbp_enhanced_records.csv")
+          ]
+          )
+
+          // await InitializeGBPIframeProcessor(options.outputPath || "./gbp_output_data/gbp_enhanced_records.csv");
         } catch (renderError) {
           console.error("Screenshot rendering failed:", renderError.message);
           console.log("Scraping completed successfully, but screenshot rendering encountered errors.");
         }
       } else {
-        console.log("\nNo GBP iframes found. Skipping screenshot rendering.");
+        console.log("\n📸 No GBP iframes found. Skipping screenshot rendering.");
       }
     } finally {
       await browser.close();
@@ -363,31 +386,30 @@ class GBPIframeScraper {
 }
 
 /**
- * Main execution function
+ * Main execution function with enhanced features
  */
-async function InitializeGBPIframeScraper() {
-  // Check if gbp_output_data directory exists, create if it doesn't
+async function InitializeEnhancedGBPScraper() {
   if (!fs.existsSync("gbp_output_data")) {
     fs.mkdirSync("gbp_output_data");
     console.log("📁 Created gbp_output_data directory");
   }
 
-  const scraper = new GBPIframeScraper({
+  const scraper = new EnhancedGBPIframeScraper({
     headless: true,
     timeout: 30000,
     delay: 2000,
+    enableDecoding: true, // Enable GBP URL decoding
   });
 
   try {
-    // Scrape from CSV file
     await scraper.scrape("gbp_input_data/internal_all.csv", {
       columnName: "Address",
-      outputPath: "gbp_output_data/gbp_only_records.csv",
+      outputPath: "gbp_output_data/gbp_enhanced_records.csv",
     });
 
-    console.log("\n🎉 Process completed successfully!");
+    console.log("\n🎉 Enhanced process completed successfully!");
     console.log("📁 Check the following files for results:");
-    console.log("   - gbp_only_records.csv (all scraping results)");
+    console.log("   - gbp_enhanced_records.csv (enhanced scraping results with decoded business info)");
     console.log("   - gbp_screenshots/ folder (screenshots of GBP iframes)");
     console.log("   - gbp_screenshot_results.csv (screenshot processing results)");
 
@@ -398,9 +420,9 @@ async function InitializeGBPIframeScraper() {
 }
 
 // Export for use as module
-module.exports = { InitializeGBPIframeScraper };
+module.exports = { InitializeEnhancedGBPScraper, EnhancedGBPIframeScraper };
 
 // Run if called directly
 if (require.main === module) {
-  InitializeGBPIframeScraper();
+  InitializeEnhancedGBPScraper();
 }

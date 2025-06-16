@@ -5,6 +5,7 @@
   "main": "scraper.js",
   "scripts": {
     "start": "node scraper/scraper.js",
+    "gbp-location": "node screenshot_services/gbp_location_screenshot.js",
     "test": "node test-scraper.js"
   },
   "dependencies": {
