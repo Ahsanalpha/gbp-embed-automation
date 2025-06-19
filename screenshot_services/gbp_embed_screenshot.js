@@ -351,7 +351,7 @@ class GBPIframeProcessor {
       const filename = `screenshot_${index + 1}_${this.sanitizeFilename(
         url
       )}.png`;
-      const screenshotPath = path.resolve(__dirname, '..', 'screenshots',this.outputDir, filename);
+      const screenshotPath = path.join('screenshots',this.outputDir, filename);
 
       await page.screenshot({
         path: screenshotPath,
@@ -515,11 +515,13 @@ async function InitializeGBPIframeProcessor(fileToProcess) {
     });
 
     const results = await gbpEmbedProcessor.process(csvFilePath);
-
+    
     console.log("\nProcessing completed!");
     console.log(
       "Check the screenshots folder for captured images and processing report."
     );
+    console.log("gbp_embed_output:::",results)
+    return results;
   } catch (error) {
     console.error("Script execution failed:", error.message);
     process.exit(1);

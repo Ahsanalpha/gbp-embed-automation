@@ -396,6 +396,18 @@ class GoogleBusinessProfileScraper {
     }
   }
 
+  async startScreenshotOperation(nameAddress,saveDirectoryPath, screenshotDimensions, imageCategory) {
+      await this.ensureFolderExists(saveDirectoryPath);
+      const photoScreenshot = await this.takeViewportScreenshot(
+        nameAddress,
+        "gbp_image",
+        screenshotDimensions,
+        gbpImagesDirectory
+      );
+
+      return photoScreenshot;
+  }
+
   async takeViewportScreenshot(
     nameAddress,
     screenshotType = "photos",
@@ -610,7 +622,7 @@ class GoogleBusinessProfileScraper {
     try {
       const resultsFile = path.join(
         this.options.screenshotDir,
-        "processing_results.json"
+        "processing_report.json"
       );
       await fs.writeFile(resultsFile, JSON.stringify(this.results, null, 2));
       console.log(`💾 Results saved to: ${resultsFile}`);
@@ -646,7 +658,7 @@ class GoogleBusinessProfileScraper {
 
       // Final save
       await this.saveResults();
-
+      
       console.log("\n🎉 Batch processing completed!");
       console.log(
         `✅ Successfully processed: ${
@@ -660,6 +672,7 @@ class GoogleBusinessProfileScraper {
           ).length
         }`
       );
+      return this.results;
     } catch (error) {
       console.error("❌ Batch processing failed:", error.message);
       throw error;
@@ -693,7 +706,9 @@ async function InitializeGBPBrowserSearchScreenshot() {
 
     try {
         await scraper.initialize();
-        await scraper.processAllRecords('./gbp_output_data/gbp_enhanced_records.csv');
+        const results = await scraper.processAllRecords('./gbp_output_data/gbp_enhanced_records.csv');
+        console.log("gbp_browser_output:::",results)
+        return results;
     } catch (error) {
         console.error('❌ Script execution failed:', error.message);
     } finally {

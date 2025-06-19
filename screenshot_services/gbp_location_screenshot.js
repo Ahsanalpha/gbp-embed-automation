@@ -395,10 +395,25 @@ class GoogleMapsDirectionsScreenshot {
     }
   }
 
+  async generateReport(results,outputPath) {
+  
+    const summary = {
+      totalProcessed: results.length,
+      successful: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success).length,
+      timestamp: new Date().toISOString(),
+      results: results,
+    };
+  
+    fs.writeFileSync(outputPath, JSON.stringify(summary, null, 2));
+    console.log(`Report saved: ${outputPath}`);
+    return summary;
+  }
+
   /**
    * Main processing function
    */
-  async processDirectionsScreenshots(csvFilePath, outputPath = "./gmaps_directions_results.csv") {
+  async processDirectionsScreenshots(csvFilePath, outputPath) {
     try {
       // Ensure screenshot directory exists
       this.ensureDirectoryExists(this.options.screenshotPath);
@@ -442,7 +457,9 @@ class GoogleMapsDirectionsScreenshot {
         }
 
         // Save results
-        await this.saveResultsToCsv(outputPath);
+
+        // await this.saveResultsToCsv(outputPath);
+        this.generateReport(this.results,outputPath)
 
         // Print summary
         const successCount = this.results.filter(r => r.screenshot_status === 'success').length;
@@ -458,7 +475,7 @@ class GoogleMapsDirectionsScreenshot {
       } finally {
         await browser.close();
       }
-
+      console.log("gbp_location_output:::",this.results)
       return this.results;
 
     } catch (error) {
@@ -481,7 +498,7 @@ async function InitializeGoogleMapsDirectionsScreenshot(csvFilePath, options = {
     showBoundingBox: options.showBoundingBox !== false, // Default to true
   });
 
-  const outputPath = options.outputPath || "./gmaps_directions_results.csv";
+  const outputPath = "./screenshots/gmaps_directions_screenshots/processing_report.json";
   
   return await screenshotProcessor.processDirectionsScreenshots(csvFilePath, outputPath);
 }
