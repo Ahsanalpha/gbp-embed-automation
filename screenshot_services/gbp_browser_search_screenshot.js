@@ -21,12 +21,26 @@ class GoogleBusinessProfileScraper {
     this.results = [];
   }
 
+  /**
+   * Ensures that a folder exists. Creates it if it doesn't.
+   * @param {string} folderPath - Absolute or relative path to the folder.
+   */
+  async ensureFolderExists(folderPath) {
+    try {
+      await fs.mkdir(folderPath, { recursive: true });
+      // Directory now exists (was created or already present)
+    } catch (err) {
+      console.error(`Failed to ensure folder exists at ${folderPath}:`, err);
+      throw err;
+    }
+  }
+
   async initialize() {
     try {
       console.log("🚀 Initializing browser...");
 
       // Ensure screenshots directory exists
-      await fs.mkdir(this.options.screenshotDir, { recursive: true });
+      // await fs.mkdir(this.options.screenshotDir, { recursive: true });
 
       // Get default Chrome profile path
       const defaultProfilePath = this.getDefaultProfilePath();
@@ -246,7 +260,7 @@ class GoogleBusinessProfileScraper {
             // Verify it's actually clickable and visible
             const isVisible = await seePhotosButton.isIntersectingViewport();
             if (isVisible) {
-              console.log('📸 Found "See photos" button');
+              console.log('📸 Found "See photos" button:::', selector);
               break;
             } else {
               seePhotosButton = null;
@@ -261,7 +275,7 @@ class GoogleBusinessProfileScraper {
       if (!seePhotosButton) {
         seePhotosButton = await this.page.evaluateHandle(() => {
           const elements = Array.from(
-            document.querySelectorAll('button, a, [role="button"]')
+            document.querySelectorAll('button, [role="button"]')
           );
           return elements.find(
             (el) => el.textContent?.toLowerCase().includes("see photos")
@@ -306,6 +320,9 @@ class GoogleBusinessProfileScraper {
       console.log("⏳ Waiting for images to load and render...");
       await this.page.waitForTimeout(10000); // Increased delay for image rendering
 
+      const gbpImagesDirectory = './screenshots/gbp_browser_search_screenshots';
+      await this.ensureFolderExists(gbpImagesDirectory);
+
       const gbpImagesClipDimension = {
         x: 420,
         y: 220,
@@ -316,8 +333,9 @@ class GoogleBusinessProfileScraper {
       // Take screenshot of the photo modal only
       const photoScreenshot = await this.takeViewportScreenshot(
         nameAddress,
-        "photos",
+        "gbp_image",
         gbpImagesClipDimension,
+        gbpImagesDirectory
       );
 
       // Close modal with Esc key
@@ -378,12 +396,11 @@ class GoogleBusinessProfileScraper {
     }
   }
 
-
-
   async takeViewportScreenshot(
     nameAddress,
     screenshotType = "photos",
-    clipDimensions
+    clipDimensions,
+    screenshotDirectory
   ) {
     try {
       const sanitizedName = nameAddress
@@ -391,7 +408,7 @@ class GoogleBusinessProfileScraper {
         .replace(/\s+/g, "_");
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const filename = `${sanitizedName}_${screenshotType}_${timestamp}.png`;
-      const filepath = path.join(this.options.screenshotDir, filename);
+      const filepath = path.join(screenshotDirectory, filename);
 
       // Get viewport dimensions
       const viewport = await this.page.viewport();
@@ -554,6 +571,7 @@ class GoogleBusinessProfileScraper {
         place_id: record.Place_ID,
         processed_at: new Date().toISOString(),
         screenshot: result,
+        // TYPE
         status: result.success ? "success" : "failed",
       };
 
@@ -617,13 +635,13 @@ class GoogleBusinessProfileScraper {
       for (let i = 0; i < records.length; i++) {
         await this.processRecord(records[i], i);
 
-        // Save intermediate results every 10 records
-        if ((i + 1) % 10 === 0) {
-          await this.saveResults();
-          console.log(
-            `💾 Intermediate save completed (${i + 1}/${records.length})`
-          );
-        }
+        // // Save intermediate results every 10 records
+        // if ((i + 1) % 10 === 0) {
+        //   await this.saveResults();
+        //   console.log(
+        //     `💾 Intermediate save completed (${i + 1}/${records.length})`
+        //   );
+        // }
       }
 
       // Final save
@@ -664,7 +682,7 @@ class GoogleBusinessProfileScraper {
 }
 
 // Main execution function
-async function main() {
+async function InitializeGBPBrowserSearchScreenshot() {
     const scraper = new GoogleBusinessProfileScraper({
         headless: false, // Set to true for production
         timeout: 45000, // Increased timeout for profile loading
@@ -696,7 +714,7 @@ process.on('SIGTERM', async () => {
 
 // Run the script
 if (require.main === module) {
-    main();
+    InitializeGBPBrowserSearchScreenshot();
 }
 
-module.exports = GoogleBusinessProfileScraper;
+module.exports = {InitializeGBPBrowserSearchScreenshot,GoogleBusinessProfileScraper};

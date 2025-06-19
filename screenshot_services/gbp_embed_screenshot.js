@@ -532,6 +532,10 @@ process.on("unhandledRejection", (reason, promise) => {
   process.exit(1);
 });
 
+if(require.main === module) {
+  InitializeGBPIframeProcessor('./gbp_output_data/gbp_enhanced_records.csv')
+}
+
 module.exports = {
   GBPIframeProcessor,
   InitializeGBPIframeProcessor,

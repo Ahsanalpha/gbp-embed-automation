@@ -8,6 +8,7 @@ const path = require("path");
 const { InitializeGBPIframeProcessor } = require("../screenshot_services/gbp_embed_screenshot.js");
 const { EnhancedGBPUrlDecoder } = require("./utils/gbp_url_decoder.js"); // Import the decoder
 const { InitializeGoogleMapsDirectionsScreenshot } = require("../screenshot_services/gbp_location_screenshot.js");
+const { InitializeGBPBrowserSearchScreenshot } = require("../screenshot_services/gbp_browser_search_screenshot.js");
 
 class EnhancedGBPIframeScraper {
   constructor(options = {}) {
@@ -388,10 +389,12 @@ class EnhancedGBPIframeScraper {
       if (this.onlyGBPSuccessRecords.length > 0) {
         console.log(`\n📸 Found ${this.onlyGBPSuccessRecords.length} GBP records. Starting screenshot rendering...`);
         try {
+          const inputCSVFilePath = "./gbp_output_data/gbp_enhanced_records.csv";
           await Promise.allSettled(
             [
-            InitializeGBPIframeProcessor(options.outputPath || "./gbp_output_data/gbp_enhanced_records.csv"),
-            InitializeGoogleMapsDirectionsScreenshot("./gbp_output_data/gbp_enhanced_records.csv")
+            InitializeGBPIframeProcessor(inputCSVFilePath),
+            InitializeGoogleMapsDirectionsScreenshot(inputCSVFilePath),
+            InitializeGBPBrowserSearchScreenshot(inputCSVFilePath)
           ]
           )
 
