@@ -140,34 +140,54 @@ class EnhancedGBPIframeScraper {
             );
         });
 
-        matchingIframes.forEach(({ src }) => {
-          const normalizedURL = this.normalizeUrl(src);
-          if (src.length > 0) {
-            // Decode GBP URL if decoding is enabled
-            let decodedInfo = {};
-            if (this.options.enableDecoding) {
-              decodedInfo = this.decoder.decodeGBPUrl(normalizedURL);
-            }
+       for (const { src } of matchingIframes) {
+  const normalizedURL = this.normalizeUrl(src);
+  if (normalizedURL.length > 0) {
+    try {
+      // Decode GBP URL if decoding is enabled
+      let decodedInfo = {};
+      if (this.options.enableDecoding) {
+        decodedInfo = await this.decoder.decodeGBPUrl(normalizedURL);
+        console.log("decoded info:::", decodedInfo);
+      }
 
-            // Create enhanced result object
-            const result = {
-              url: url,
-              iframe_src: normalizedURL,
-              found_at: new Date().toISOString(),
-              status: "success",
-              // Add decoded information
-              business_name: this.options.enableDecoding ? decodedInfo.businessName || '' : '',
-              search_url: this.options.enableDecoding ? decodedInfo.searchUrl || '' : '',
-              // place_id: this.options.enableDecoding ? decodedInfo.placeId || '' : '',
-              // latitude: this.options.enableDecoding ? decodedInfo.coordinates?.lat || '' : '',
-              // longitude: this.options.enableDecoding ? decodedInfo.coordinates?.lng || '' : '',
-              decoding_status: this.options.enableDecoding ? (decodedInfo.error ? 'Error' : 'Success') : 'Disabled',
-              decoding_error: this.options.enableDecoding ? decodedInfo.error || '' : ''
-            };
+      const result = {
+        url: url,
+        iframe_src: normalizedURL,
+        found_at: new Date().toISOString(),
+        status: "success",
+        business_name: this.options.enableDecoding ? decodedInfo.businessName || '' : '',
+        address: this.options.enableDecoding ? decodedInfo.address || '' : '',
+        name_and_address: `${decodedInfo.businessName}, ${decodedInfo.address}`,
+        search_url: this.options.enableDecoding ? decodedInfo.searchUrl || '' : '',
+        decoding_status: this.options.enableDecoding
+          ? (decodedInfo.error ? 'Error' : 'Success')
+          : 'Disabled',
+        decoding_error: this.options.enableDecoding ? decodedInfo.error || '' : ''
+      };
 
-            this.results.push(result);
-          }
-        });
+      this.results.push(result);
+    } catch (innerError) {
+      console.error(`Error processing iframe src: ${normalizedURL}`, innerError.message);
+
+      this.results.push({
+        url: url,
+        iframe_src: normalizedURL,
+        found_at: new Date().toISOString(),
+        status: "error",
+        name_and_address: "",
+        business_name: '',
+        address: '',
+        search_url: '',
+        decoding_status: 'Error',
+        decoding_error: innerError.message
+      });
+    }
+  }
+}
+
+
+
       } else {
         console.log(`✗ No GBP iframes found on ${url}`);
         this.results.push({
@@ -175,7 +195,9 @@ class EnhancedGBPIframeScraper {
           iframe_src: "",
           found_at: new Date().toISOString(),
           status: "no_iframe_found",
+          name_and_address: "",
           business_name: '',
+          address: '',
           search_url: '',
           // place_id: '',
           // latitude: '',
@@ -197,7 +219,9 @@ class EnhancedGBPIframeScraper {
         iframe_src: "",
         found_at: new Date().toISOString(),
         status: "error",
+        name_and_address: "",
         business_name: '',
+        address: '',
         search_url: '',
         // place_id: '',
         // latitude: '',
@@ -256,7 +280,9 @@ class EnhancedGBPIframeScraper {
       header: [
         { id: "url", title: "URL" },
         { id: "iframe_src", title: "GBP_Iframe_Source" },
+        {id: "name_and_address", title: "Name_Address"},
         { id: "business_name", title: "Business_Name" },
+        { id:"address", title:'Business_Address'},
         { id: "search_url", title: "Search_URL" },
         // { id: "place_id", title: "Place_ID" },
         // { id: "latitude", title: "Latitude" },
