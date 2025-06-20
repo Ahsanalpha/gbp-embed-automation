@@ -3,7 +3,6 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 const csv = require("csv-parser");
-const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 const path = require("path");
 
 class GoogleMapsDirectionsScreenshot {
@@ -55,6 +54,7 @@ class GoogleMapsDirectionsScreenshot {
           if (row.Search_URL && row.Search_URL.trim()) {
             records.push({
               url: row.URL || '',
+              city: row.City || '',
               businessName: row.Business_Name || '',
               searchUrl: row.Search_URL.trim(),
               iframeSrc: row.GBP_Iframe_Source || '',
@@ -324,6 +324,7 @@ class GoogleMapsDirectionsScreenshot {
         business_name: businessName,
         search_url: record.searchUrl,
         screenshot_path: screenshotPath,
+        city: record.city,
         screenshot_status: 'success',
         processed_at: new Date().toISOString(),
         starting_point: this.options.startingPoint,
@@ -339,6 +340,7 @@ class GoogleMapsDirectionsScreenshot {
         business_name: record.businessName || 'Unknown',
         search_url: record.searchUrl,
         screenshot_path: '',
+        city: record.city,
         screenshot_status: 'error',
         processed_at: new Date().toISOString(),
         starting_point: this.options.startingPoint,
@@ -357,46 +359,7 @@ class GoogleMapsDirectionsScreenshot {
     }
   }
 
-  /**
-   * Save results to CSV file
-   */
-  async saveResultsToCsv(outputPath) {
-    const csvWriter = createCsvWriter({
-      path: outputPath,
-      header: [
-        { id: "url", title: "Original_URL" },
-        { id: "business_name", title: "Business_Name" },
-        { id: "search_url", title: "Search_URL" },
-        { id: "screenshot_path", title: "Screenshot_Path" },
-        { id: "screenshot_status", title: "Screenshot_Status" },
-        { id: "starting_point", title: "Starting_Point" },
-        { id: "processed_at", title: "Processed_At" },
-        { id: "error_message", title: "Error_Message" },
-      ],
-    });
-
-    await csvWriter.writeRecords(this.results);
-    console.log(`\n✅ Directions screenshot results saved to ${outputPath}`);
-
-    // Save errors if any
-    if (this.errors.length > 0) {
-      const errorCsvWriter = createCsvWriter({
-        path: "./gmaps_directions_errors.csv",
-        header: [
-          { id: "business_name", title: "Business_Name" },
-          { id: "search_url", title: "Search_URL" },
-          { id: "error", title: "Error" },
-          { id: "timestamp", title: "Timestamp" },
-        ],
-      });
-
-      await errorCsvWriter.writeRecords(this.errors);
-      console.log(`✅ Errors saved to gmaps_directions_errors.csv`);
-    }
-  }
-
   async generateReport(results,outputPath) {
-  
     const summary = {
       totalProcessed: results.length,
       successful: results.filter((r) => r.success).length,
@@ -458,7 +421,6 @@ class GoogleMapsDirectionsScreenshot {
 
         // Save results
 
-        // await this.saveResultsToCsv(outputPath);
         this.generateReport(this.results,outputPath)
 
         // Print summary

@@ -226,38 +226,45 @@ class EnhancedGBPUrlDecoder {
   }
 
   async fetchVerifiedGoogleAddress(businessName) {
-    const url = "https://places.googleapis.com/v1/places:searchText";
+  const url = "https://places.googleapis.com/v1/places:searchText";
 
-    const headers = {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": process.env.GOOGLE_PLACES_API,
-      "X-Goog-FieldMask":
-        "places.id,places.displayName,places.formattedAddress",
-    };
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Goog-Api-Key": process.env.GOOGLE_PLACES_API,
+    "X-Goog-FieldMask":
+      "places.id,places.displayName,places.formattedAddress,places.addressComponents",
+  };
 
-    const body = {
-      textQuery: businessName,
-    };
+  const body = {
+    textQuery: businessName,
+  };
 
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
 
-      if (!res.ok) {
-        throw new Error(`HTTP error placesAPI! status: ${res.status}`);
-      }
-
-      const data = await res.json();
-      console.log("Response placesAPI:", JSON.stringify(data, null, 2));
-      return data["places"][0]["formattedAddress"]; // ✅ return the parsed response
-    } catch (err) {
-      console.error("Fetch error placesAPI:", err);
-      throw err; // optional: rethrow if caller needs to handle it
+    if (!res.ok) {
+      throw new Error(`HTTP error placesAPI! status: ${res.status}`);
     }
+
+    const data = await res.json();
+    console.log("Response placesAPI:", JSON.stringify(data, null, 2));
+    
+    // Extract city (locality) from addressComponents:
+    const place = data["places"][0];
+    const cityComponent = place.addressComponents.find(component => component.types.includes("locality"));
+    const city = cityComponent ? cityComponent.shortText : null;
+
+    return { formattedAddress: place.formattedAddress, city };
+
+  } catch (err) {
+    console.error("Fetch error placesAPI:", err);
+    throw err;
   }
+}
 
   /**
    * Enhanced URL decoding with multiple methods and validation
@@ -326,7 +333,9 @@ class EnhancedGBPUrlDecoder {
         }
         return this.createErrorResult("Decoded result failed validation");
       }
-      validatedResult.address = await this.fetchVerifiedGoogleAddress(validatedResult.businessName)
+      const googleAddressResponse = await this.fetchVerifiedGoogleAddress(validatedResult.businessName)
+      validatedResult.address = googleAddressResponse.formattedAddress;
+      validatedResult.city = googleAddressResponse.city;
       return validatedResult;
     } catch (error) {
       this.log(`Main decoding error: ${error.message}`);

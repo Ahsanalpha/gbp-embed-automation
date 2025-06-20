@@ -114,6 +114,7 @@ class GBPIframeProcessor {
               url: data.URL.trim(),
               gbpIframeSrc: data.GBP_Iframe_Source.trim(),
               index: results.length,
+              city: data.City
             });
           } else {
             console.warn(`Skipping row due to missing required fields:`, data);
@@ -135,7 +136,7 @@ class GBPIframeProcessor {
    * Navigate to URL and find the specific iframe
    */
   async processURL(urlData, retryCount = 0) {
-    const { url, gbpIframeSrc, index } = urlData;
+    const { url, gbpIframeSrc, index, city } = urlData;
     let page = null;
 
     try {
@@ -180,6 +181,7 @@ class GBPIframeProcessor {
         url,
         scrollPosition: iframeInfo.scrollPosition,
         screenshotPath,
+        city,
         iframeInfo: {
           src: iframeInfo.src,
           dimensions: iframeInfo.dimensions,

@@ -11,14 +11,17 @@ class GoogleBusinessProfileScraper {
       slowMo: options.slowMo || 0,
       timeout: options.timeout || 30000,
       screenshotDir:
-        options.screenshotDir || "./screenshots/gbp_browser_search_screenshots",
+        options.screenshotDir || "./screenshots/gbp_images_screenshots",
       maxRetries: options.maxRetries || 3,
       delayBetweenRequests: options.delayBetweenRequests || 2000,
       ...options,
     };
     this.browser = null;
     this.page = null;
-    this.results = [];
+    this.results = {
+      "gbp-images": [],
+      "gbp-reviews": [],
+    };
   }
 
   /**
@@ -165,7 +168,13 @@ class GoogleBusinessProfileScraper {
     });
   }
 
-  async searchGoogleBusiness(nameAddress, retryCount = 0) {
+  async searchGoogleBusiness(
+    nameAddress,
+    retryCount = 0,
+    index,
+    searchTerm,
+    record
+  ) {
     try {
       console.log(`🔍 Searching for: ${nameAddress}`);
 
@@ -203,23 +212,29 @@ class GoogleBusinessProfileScraper {
       // Additional wait for business profile to render
       await this.page.waitForTimeout(3000);
 
-      // // Check and handle location modal
-      // await this.handleLocationModal();
-
-      // Wait a bit more for any dynamic content
-      await this.page.waitForTimeout(2000);
-
-      // Check if business profile is present on the right side
-      // const hasBusinessProfile = await this.checkForBusinessProfile();
-
-      // if (!hasBusinessProfile) {
-      //     console.log(`⚠️ No business profile found for: ${nameAddress}`);
-      // }
-
       // Look for "See photos" and handle photo modal (only screenshot)
-      const photoScreenshot = await this.handleSeePhotos(nameAddress);
+      const gbpImageScreenshot = await this.handleSeePhotos(nameAddress,record.City);
+      const screenshotResult = this.createProcessedObject(
+        'gbp-images',
+        gbpImageScreenshot,
+        index,
+        searchTerm,
+        record
+      );
+      this.results["gbp-images"].push(screenshotResult);
 
-      return photoScreenshot;
+       //take GBP Reviews screenshot
+      const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
+        nameAddress,record.City
+      );
+      const reviewsScreenshotResult = this.createProcessedObject(
+        'gbp-reviews',
+        gbpReviewsScreenshot,
+        index,
+        searchTerm,
+        record
+      );
+      this.results["gbp-reviews"].push(reviewsScreenshotResult);
     } catch (error) {
       console.error(`❌ Error searching for ${nameAddress}:`, error.message);
 
@@ -228,26 +243,79 @@ class GoogleBusinessProfileScraper {
           `🔄 Retrying... (${retryCount + 1}/${this.options.maxRetries})`
         );
         await this.page.waitForTimeout(5000); // Wait before retry
-        return await this.searchGoogleBusiness(nameAddress, retryCount + 1);
+        return await this.searchGoogleBusiness(
+          nameAddress,
+          3,
+          retryCount + 1,
+          index
+        );
       }
 
       throw error;
     }
   }
 
-  async handleSeePhotos(nameAddress) {
+  createProcessedObject(entityType, result, passedIndex, searchTerm, record) {
+    const processedResult = {
+      index: passedIndex + 1,
+      name_address: searchTerm,
+      business_name: record.Business_Name,
+      city:record.City,
+      url: record.URL,
+      place_id: record.Place_ID,
+      processed_at: new Date().toISOString(),
+      status: result.success ? "success" : "failed",
+      ...result,
+    };
+    return processedResult;
+  }
+
+  //take GBP reviews screenshot
+  async handleReviewsScreenshot(nameAddress,city) {
+    try {
+      const gbpReviewsDirectory = "./screenshots/gbp_reviews_screenshots";
+      const gbpReviewsClipDimension = {
+        x: 950,
+        y: 150,
+        width: 510,
+        height: 280,
+      };
+      const photoScreenshot = await this.startScreenshotOperation(
+        nameAddress,
+        city,
+        gbpReviewsDirectory,
+        gbpReviewsClipDimension,
+        "gbp_review"
+      );
+      return photoScreenshot;
+    } catch (error) {
+      console.error("❌ Error handling see photos:", error.message);
+
+      // Try to close any open modal
+      try {
+        await this.page.keyboard.press("Escape");
+        await this.page.waitForTimeout(500);
+      } catch (closeError) {
+        // Ignore close errors
+      }
+
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  //take GBP Images screenshot
+  async handleSeePhotos(nameAddress,city) {
     try {
       console.log('🔍 Looking for "See photos" button...');
 
       // Look for "See photos" button with various selectors
       const seePhotosSelectors = [
         'button:has-text("See photos")',
-        'a:has-text("See photos")',
+        // 'a:has-text("See photos")',
         '[role="button"]:has-text("See photos")',
-        // 'button[aria-label*="photos"]',
-        // 'a[aria-label*="photos"]',
-        // '.YnHWgc', // Google's photo gallery button class
-        // '[data-value="Photos"]'
       ];
 
       let seePhotosButton = null;
@@ -320,22 +388,19 @@ class GoogleBusinessProfileScraper {
       console.log("⏳ Waiting for images to load and render...");
       await this.page.waitForTimeout(10000); // Increased delay for image rendering
 
-      const gbpImagesDirectory = './screenshots/gbp_browser_search_screenshots';
-      await this.ensureFolderExists(gbpImagesDirectory);
-
+      const gbpImagesDirectory = "./screenshots/gbp_images_screenshots";
       const gbpImagesClipDimension = {
         x: 420,
         y: 220,
         width: 1070,
         height: 750,
       };
-
-      // Take screenshot of the photo modal only
-      const photoScreenshot = await this.takeViewportScreenshot(
+      const photoScreenshot = await this.startScreenshotOperation(
         nameAddress,
-        "gbp_image",
+        city,
+        gbpImagesDirectory,
         gbpImagesClipDimension,
-        gbpImagesDirectory
+        "gbp_image"
       );
 
       // Close modal with Esc key
@@ -396,20 +461,28 @@ class GoogleBusinessProfileScraper {
     }
   }
 
-  async startScreenshotOperation(nameAddress,saveDirectoryPath, screenshotDimensions, imageCategory) {
-      await this.ensureFolderExists(saveDirectoryPath);
-      const photoScreenshot = await this.takeViewportScreenshot(
-        nameAddress,
-        "gbp_image",
-        screenshotDimensions,
-        gbpImagesDirectory
-      );
+  async startScreenshotOperation(
+    nameAddress,
+    city,
+    storageDirectoryPath,
+    screenshotDimensions,
+    imageCategory
+  ) {
+    await this.ensureFolderExists(storageDirectoryPath);
+    const photoScreenshot = await this.takeViewportScreenshot(
+      nameAddress,
+      city,
+      imageCategory,
+      screenshotDimensions,
+      storageDirectoryPath
+    );
 
-      return photoScreenshot;
+    return photoScreenshot;
   }
 
   async takeViewportScreenshot(
     nameAddress,
+    city,
     screenshotType = "photos",
     clipDimensions,
     screenshotDirectory
@@ -449,6 +522,7 @@ class GoogleBusinessProfileScraper {
         success: true,
         filepath: filepath,
         filename: filename,
+        city,
         type: screenshotType,
         dimensions: {
           width: viewport.width,
@@ -573,31 +647,21 @@ class GoogleBusinessProfileScraper {
         );
       }
 
-      const result = await this.searchGoogleBusiness(searchTerm);
+      await this.searchGoogleBusiness(
+        searchTerm,
+        3,
+        index,
+        searchTerm,
+        record
+      );
 
-      const processedResult = {
-        index: index + 1,
-        name_address: searchTerm,
-        business_name: record.Business_Name,
-        url: record.URL,
-        place_id: record.Place_ID,
-        processed_at: new Date().toISOString(),
-        screenshot: result,
-        // TYPE
-        status: result.success ? "success" : "failed",
-      };
-
-      this.results.push(processedResult);
-
-      // Add delay between requests to be respectful
-      if (index < this.results.length - 1) {
+      if (index < Object.keys(this.results).length - 1) {
         console.log(
           `⏳ Waiting ${this.options.delayBetweenRequests}ms before next request...`
         );
         await this.page.waitForTimeout(this.options.delayBetweenRequests);
       }
 
-      return processedResult;
     } catch (error) {
       console.error(`❌ Failed to process record ${index + 1}:`, error.message);
 
@@ -613,21 +677,38 @@ class GoogleBusinessProfileScraper {
         error: error.message,
       };
 
-      this.results.push(errorResult);
       return errorResult;
     }
   }
 
   async saveResults() {
-    try {
-      const resultsFile = path.join(
-        this.options.screenshotDir,
-        "processing_report.json"
-      );
-      await fs.writeFile(resultsFile, JSON.stringify(this.results, null, 2));
-      console.log(`💾 Results saved to: ${resultsFile}`);
-    } catch (error) {
-      console.error("❌ Failed to save results:", error.message);
+    const gbpEntities = Object.keys(this.results);
+
+    for (const entity of gbpEntities) {
+      let screenshotDir;
+
+      switch (entity) {
+        case "gbp-images":
+          screenshotDir = "./screenshots/gbp_images_screenshots";
+          break;
+        case "gbp-reviews":
+          screenshotDir = "./screenshots/gbp_reviews_screenshots";
+          break;
+        default:
+          console.warn(`⚠️ No screenshotDir found for entity: ${entity}`);
+          continue; // skip this iteration if no matching case
+      }
+
+      try {
+        const resultsFile = path.join(screenshotDir, "processing_report.json");
+        await fs.writeFile(
+          resultsFile,
+          JSON.stringify(this.results[entity], null, 2)
+        );
+        console.log(`💾 Results for ${entity} saved to: ${resultsFile}`);
+      } catch (error) {
+        console.error("❌ Failed to save results:", error.message);
+      }
     }
   }
 
@@ -646,32 +727,12 @@ class GoogleBusinessProfileScraper {
 
       for (let i = 0; i < records.length; i++) {
         await this.processRecord(records[i], i);
-
-        // // Save intermediate results every 10 records
-        // if ((i + 1) % 10 === 0) {
-        //   await this.saveResults();
-        //   console.log(
-        //     `💾 Intermediate save completed (${i + 1}/${records.length})`
-        //   );
-        // }
       }
 
       // Final save
       await this.saveResults();
-      
+
       console.log("\n🎉 Batch processing completed!");
-      console.log(
-        `✅ Successfully processed: ${
-          this.results.filter((r) => r.status === "success").length
-        }`
-      );
-      console.log(
-        `❌ Failed: ${
-          this.results.filter(
-            (r) => r.status === "failed" || r.status === "error"
-          ).length
-        }`
-      );
       return this.results;
     } catch (error) {
       console.error("❌ Batch processing failed:", error.message);
@@ -699,7 +760,7 @@ async function InitializeGBPBrowserSearchScreenshot() {
     const scraper = new GoogleBusinessProfileScraper({
         headless: false, // Set to true for production
         timeout: 45000, // Increased timeout for profile loading
-        screenshotDir: './screenshots/gbp_browser_search_screenshots',
+        screenshotDir: './screenshots/gbp_images_screenshots',
         maxRetries: 3,
         delayBetweenRequests: 5000 // 5 seconds between requests to appear more human
     });
@@ -732,4 +793,4 @@ if (require.main === module) {
     InitializeGBPBrowserSearchScreenshot();
 }
 
-module.exports = {InitializeGBPBrowserSearchScreenshot,GoogleBusinessProfileScraper};
+module.exports = {InitializeGBPBrowserSearchScreenshot, GoogleBusinessProfileScraper};
