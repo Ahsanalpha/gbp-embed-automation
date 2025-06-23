@@ -21,7 +21,6 @@ class GoogleBusinessProfileScraper {
     this.results = {
       "gbp-images": [],
       "gbp-reviews": [],
-      "gbp-products": [], // Added new result category
     };
   }
 
@@ -42,6 +41,9 @@ class GoogleBusinessProfileScraper {
   async initialize() {
     try {
       console.log("🚀 Initializing browser...");
+
+      // Ensure screenshots directory exists
+      // await fs.mkdir(this.options.screenshotDir, { recursive: true });
 
       // Get default Chrome profile path
       const defaultProfilePath = this.getDefaultProfilePath();
@@ -211,42 +213,28 @@ class GoogleBusinessProfileScraper {
       await this.page.waitForTimeout(3000);
 
       // Look for "See photos" and handle photo modal (only screenshot)
-      // const gbpImageScreenshot = await this.handleSeePhotos(nameAddress, record.City);
-      // const screenshotResult = this.createProcessedObject(
-      //   'gbp-images',
-      //   gbpImageScreenshot,
-      //   index,
-      //   searchTerm,
-      //   record
-      // );
-      // this.results["gbp-images"].push(screenshotResult);
-
-      // Take GBP Reviews screenshot
-      // const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
-      //   nameAddress, record.City
-      // );
-      // const reviewsScreenshotResult = this.createProcessedObject(
-      //   'gbp-reviews',
-      //   gbpReviewsScreenshot,
-      //   index,
-      //   searchTerm,
-      //   record
-      // );
-      // this.results["gbp-reviews"].push(reviewsScreenshotResult);
-
-      // NEW: Handle product modal screenshot
-      const gbpProductsScreenshot = await this.handleProductModal(
-        nameAddress, record.City
-      );
-      const productsScreenshotResult = this.createProcessedObject(
-        'gbp-products',
-        gbpProductsScreenshot,
+      const gbpImageScreenshot = await this.handleSeePhotos(nameAddress,record.City);
+      const screenshotResult = this.createProcessedObject(
+        'gbp-images',
+        gbpImageScreenshot,
         index,
         searchTerm,
         record
       );
-      this.results["gbp-products"].push(productsScreenshotResult);
+      this.results["gbp-images"].push(screenshotResult);
 
+       //take GBP Reviews screenshot
+      const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
+        nameAddress,record.City
+      );
+      const reviewsScreenshotResult = this.createProcessedObject(
+        'gbp-reviews',
+        gbpReviewsScreenshot,
+        index,
+        searchTerm,
+        record
+      );
+      this.results["gbp-reviews"].push(reviewsScreenshotResult);
     } catch (error) {
       console.error(`❌ Error searching for ${nameAddress}:`, error.message);
 
@@ -257,10 +245,9 @@ class GoogleBusinessProfileScraper {
         await this.page.waitForTimeout(5000); // Wait before retry
         return await this.searchGoogleBusiness(
           nameAddress,
+          3,
           retryCount + 1,
-          index,
-          searchTerm,
-          record
+          index
         );
       }
 
@@ -273,7 +260,7 @@ class GoogleBusinessProfileScraper {
       index: passedIndex + 1,
       name_address: searchTerm,
       business_name: record.Business_Name,
-      city: record.City,
+      city:record.City,
       url: record.URL,
       place_id: record.Place_ID,
       processed_at: new Date().toISOString(),
@@ -283,183 +270,8 @@ class GoogleBusinessProfileScraper {
     return processedResult;
   }
 
-  // NEW: Handle product modal screenshot
-  async handleProductModal(nameAddress, city) {
-    try {
-      console.log('🛍️ Looking for product modal triggers...');
-
-      let productTrigger = null;
-      let triggerType = null;
-
-      // First, look for div with class "gsAWBc" containing an anchor tag
-      try {
-        const divElement = await this.page.$('.gsAWBc');
-        if (divElement) {
-          // Look for anchor tag inside this div
-          const anchorTag = await divElement.$('a');
-          if (anchorTag) {
-            await anchorTag.click();
-            await this.page.waitForTimeout(5000);
-            // const isVisible = await anchorTag.isIntersectingViewport();
-            // if (isVisible) {
-            productTrigger = anchorTag;
-            triggerType = 'gsAWBc-anchor';
-            console.log('🎯 Found product trigger: div.gsAWBc > a');
-            // }
-          }
-        }
-      } catch (error) {
-        console.log('⚠️ gsAWBc div not found, trying alternative...');
-      }
-
-      // If not found, look for span with class "tE8mme"
-      if (!productTrigger) {
-        try {
-          const spanElement = await this.page.$('.tE8mme');
-          if (spanElement) {
-            // const isVisible = await spanElement.isIntersectingViewport();
-            await spanElement.click();
-            await this.page.waitForTimeout(2000);
-            // if (isVisible) {
-              productTrigger = spanElement;
-              triggerType = 'tE8mme-span';
-              console.log('🎯 Found product trigger: span.tE8mme');
-            // }
-          }
-        } catch (error) {
-          console.log('⚠️ tE8mme span not found either');
-        }
-      }
-
-      if (!productTrigger) {
-        console.log('ℹ️ No product modal trigger found');
-        return { 
-          success: false, 
-          reason: "No product modal trigger found (gsAWBc or tE8mme)",
-          trigger_type: null
-        };
-      }
-
-      // Click the found trigger element
-      console.log(`✅ Clicked product modal trigger (${triggerType})`);
-
-      // Wait for modal to appear
-      await this.page.waitForTimeout(3000);
-
-      // Wait for product modal to load - try multiple selectors
-      const modalSelectors = [
-        '[role="dialog"]',
-        '.modal',
-        '[data-testid="product-modal"]',
-        '[data-testid="products-modal"]',
-        '.product-modal',
-        '.products-container'
-      ];
-
-      let modalFound = false;
-      for (const selector of modalSelectors) {
-        try {
-          await this.page.waitForSelector(selector, { timeout: 5000 });
-          modalFound = true;
-          console.log(`📦 Product modal found with selector: ${selector}`);
-          break;
-        } catch (error) {
-          // Continue to next selector
-        }
-      }
-
-      if (!modalFound) {
-        console.log("⚠️ Product modal selector not found, proceeding with screenshot anyway");
-      }
-
-      // Extended wait for all product images and content to load and render completely
-      console.log("⏳ Waiting for product content to load and render...");
-      await this.page.waitForTimeout(8000); // Extended delay for product content rendering
-
-      // Wait for images to load
-      await this.page.evaluate(() => {
-        return new Promise((resolve) => {
-          const images = Array.from(document.querySelectorAll('img'));
-          let loadedCount = 0;
-          const totalImages = images.length;
-
-          if (totalImages === 0) {
-            resolve();
-            return;
-          }
-
-          images.forEach((img) => {
-            if (img.complete) {
-              loadedCount++;
-            } else {
-              img.onload = () => {
-                loadedCount++;
-                if (loadedCount === totalImages) {
-                  resolve();
-                }
-              };
-              img.onerror = () => {
-                loadedCount++;
-                if (loadedCount === totalImages) {
-                  resolve();
-                }
-              };
-            }
-          });
-
-          // Fallback timeout
-          setTimeout(resolve, 5000);
-        });
-      });
-
-      const gbpProductsDirectory = "./screenshots/gbp_products_screenshots";
-      const gbpProductsClipDimension = {
-        x: 300,
-        y: 150,
-        width: 1300,
-        height: 800,
-      };
-
-      const productScreenshot = await this.startScreenshotOperation(
-        nameAddress,
-        city,
-        gbpProductsDirectory,
-        gbpProductsClipDimension,
-        "gbp_products"
-      );
-
-      // Add trigger type to the result
-      productScreenshot.trigger_type = triggerType;
-
-      // Close modal with Esc key
-      await this.page.keyboard.press("Escape");
-      console.log("✅ Closed product modal with Escape key");
-
-      // Wait for modal to close
-      await this.page.waitForTimeout(1000);
-
-      return productScreenshot;
-    } catch (error) {
-      console.error("❌ Error handling product modal:", error.message);
-
-      // Try to close any open modal
-      try {
-        await this.page.keyboard.press("Escape");
-        await this.page.waitForTimeout(500);
-      } catch (closeError) {
-        // Ignore close errors
-      }
-
-      return {
-        success: false,
-        error: error.message,
-        trigger_type: null
-      };
-    }
-  }
-
-  // Take GBP reviews screenshot
-  async handleReviewsScreenshot(nameAddress, city) {
+  //take GBP reviews screenshot
+  async handleReviewsScreenshot(nameAddress,city) {
     try {
       const gbpReviewsDirectory = "./screenshots/gbp_reviews_screenshots";
       const gbpReviewsClipDimension = {
@@ -477,7 +289,7 @@ class GoogleBusinessProfileScraper {
       );
       return photoScreenshot;
     } catch (error) {
-      console.error("❌ Error handling reviews screenshot:", error.message);
+      console.error("❌ Error handling see photos:", error.message);
 
       // Try to close any open modal
       try {
@@ -494,14 +306,15 @@ class GoogleBusinessProfileScraper {
     }
   }
 
-  // Take GBP Images screenshot
-  async handleSeePhotos(nameAddress, city) {
+  //take GBP Images screenshot
+  async handleSeePhotos(nameAddress,city) {
     try {
       console.log('🔍 Looking for "See photos" button...');
 
       // Look for "See photos" button with various selectors
       const seePhotosSelectors = [
         'button:has-text("See photos")',
+        // 'a:has-text("See photos")',
         '[role="button"]:has-text("See photos")',
       ];
 
@@ -515,7 +328,7 @@ class GoogleBusinessProfileScraper {
             // Verify it's actually clickable and visible
             const isVisible = await seePhotosButton.isIntersectingViewport();
             if (isVisible) {
-              console.log('📸 Found "See photos" button:', selector);
+              console.log('📸 Found "See photos" button:::', selector);
               break;
             } else {
               seePhotosButton = null;
@@ -534,6 +347,9 @@ class GoogleBusinessProfileScraper {
           );
           return elements.find(
             (el) => el.textContent?.toLowerCase().includes("see photos")
+            //  ||
+            // el.textContent?.toLowerCase().includes('photos') ||
+            // el.getAttribute('aria-label')?.toLowerCase().includes('photos')
           );
         });
 
@@ -833,7 +649,7 @@ class GoogleBusinessProfileScraper {
 
       await this.searchGoogleBusiness(
         searchTerm,
-        0,
+        3,
         index,
         searchTerm,
         record
@@ -877,9 +693,6 @@ class GoogleBusinessProfileScraper {
           break;
         case "gbp-reviews":
           screenshotDir = "./screenshots/gbp_reviews_screenshots";
-          break;
-        case "gbp-products": // Added new case
-          screenshotDir = "./screenshots/gbp_products_screenshots";
           break;
         default:
           console.warn(`⚠️ No screenshotDir found for entity: ${entity}`);
@@ -955,7 +768,7 @@ async function InitializeGBPBrowserSearchScreenshot() {
     try {
         await scraper.initialize();
         const results = await scraper.processAllRecords('./gbp_output_data/gbp_enhanced_records.csv');
-        console.log("gbp_browser_output:::", results);
+        console.log("gbp_browser_output:::",results)
         return results;
     } catch (error) {
         console.error('❌ Script execution failed:', error.message);

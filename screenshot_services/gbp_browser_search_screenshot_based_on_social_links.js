@@ -21,6 +21,7 @@ class GoogleBusinessProfileScraper {
     this.results = {
       "gbp-images": [],
       "gbp-reviews": [],
+      "gbp-social-links": [] // ADD THIS LINE
     };
     // this.results = [];
   }
@@ -213,29 +214,40 @@ class GoogleBusinessProfileScraper {
       // Additional wait for business profile to render
       await this.page.waitForTimeout(3000);
 
-      // Look for "See photos" and handle photo modal (only screenshot)
-      const gbpImageScreenshot = await this.handleSeePhotos(nameAddress);
-      const screenshotResult = this.createProcessedObject(
-        'gbp-images',
-        gbpImageScreenshot,
-        index,
-        searchTerm,
-        record
-      );
-      this.results["gbp-images"].push(screenshotResult);
+      // // Look for "See photos" and handle photo modal (only screenshot)
+      // const gbpImageScreenshot = await this.handleSeePhotos(nameAddress);
+      // const screenshotResult = this.createProcessedObject(
+      //   'gbp-images',
+      //   gbpImageScreenshot,
+      //   index,
+      //   searchTerm,
+      //   record
+      // );
+      // this.results["gbp-images"].push(screenshotResult);
 
-       //take GBP Reviews screenshot
-      const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
-        nameAddress
-      );
-      const reviewsScreenshotResult = this.createProcessedObject(
-        'gbp-reviews',
-        gbpReviewsScreenshot,
-        index,
-        searchTerm,
-        record
-      );
-      this.results["gbp-reviews"].push(reviewsScreenshotResult);
+      //  //take GBP Reviews screenshot
+      // const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
+      //   nameAddress
+      // );
+      // const reviewsScreenshotResult = this.createProcessedObject(
+      //   'gbp-reviews',
+      //   gbpReviewsScreenshot,
+      //   index,
+      //   searchTerm,
+      //   record
+      // );
+      // this.results["gbp-reviews"].push(reviewsScreenshotResult);
+
+      // ADD THIS NEW METHOD CALL - Capture social media links
+      const gbpSocialLinksResult = await this.handleCaptureLinks(nameAddress);
+      const socialLinksResult = this.createProcessedObject(
+      'gbp-social-links',
+      gbpSocialLinksResult,
+      index,
+      searchTerm,
+      record
+    );
+    this.results["gbp-social-links"].push(socialLinksResult);
     } catch (error) {
       console.error(`❌ Error searching for ${nameAddress}:`, error.message);
 
@@ -307,9 +319,296 @@ class GoogleBusinessProfileScraper {
   }
 
   //take GBP links
-  async handleCaptureLinks() {
-   
+  // Add this method to the GoogleBusinessProfileScraper class
+
+// Add this method to the GoogleBusinessProfileScraper class
+
+// Add this method to the GoogleBusinessProfileScraper class
+
+async handleCaptureLinks(nameAddress) {
+  try {
+    console.log('🔍 Looking for social media links...');
+
+    // Define social media patterns to search for (Facebook, YouTube, Instagram only)
+    const socialMediaPatterns = [
+      {
+        name: 'Facebook',
+        textPattern: 'facebook',
+        linkPatterns: ['facebook.com/profile.php', 'facebook.com/', 'fb.com/'],
+        priority: 1
+      },
+      {
+        name: 'Instagram', 
+        textPattern: 'instagram',
+        linkPatterns: ['instagram.com/', 'instagr.am/'],
+        priority: 2
+      },
+      {
+        name: 'YouTube',
+        textPattern: 'youtube',
+        linkPatterns: ['youtube.com/channel', 'youtube.com/c/', 'youtube.com/user/', 'youtu.be/'],
+        priority: 3
+      }
+    ];
+
+    let foundSocialLinks = [];
+
+    // Search for each social media pattern
+    for (const pattern of socialMediaPatterns) {
+      console.log(`🔎 Searching for ${pattern.name} links...`);
+      
+      const foundElements = await this.page.evaluate((pattern) => {
+        const allElements = document.querySelectorAll('a, div, span, p, li, button');
+        const foundItems = [];
+        
+        for (const element of allElements) {
+          const elementText = element.textContent?.toLowerCase() || '';
+          const elementHref = element.href?.toLowerCase() || '';
+          const parentElement = element.parentElement;
+          const parentText = parentElement?.textContent?.toLowerCase() || '';
+          
+          // Check if element or its parent contains the text pattern
+          const hasText = elementText.includes(pattern.textPattern) || 
+                         parentText.includes(pattern.textPattern) ||
+                         element.getAttribute('aria-label')?.toLowerCase().includes(pattern.textPattern);
+          
+          // Check if element has any of the link patterns
+          let hasLink = false;
+          let matchedLinkPattern = '';
+          
+          for (const linkPattern of pattern.linkPatterns) {
+            if (elementHref.includes(linkPattern.toLowerCase())) {
+              hasLink = true;
+              matchedLinkPattern = linkPattern;
+              break;
+            }
+          }
+          
+          // Also check for links in nearby elements (siblings or children)
+          let hasNearbyLink = false;
+          let nearbyLinkHref = '';
+          
+          if (hasText && !hasLink) {
+            // Check siblings
+            const siblings = parentElement?.children || [];
+            for (const sibling of siblings) {
+              const siblingHref = sibling.href?.toLowerCase() || '';
+              for (const linkPattern of pattern.linkPatterns) {
+                if (siblingHref.includes(linkPattern.toLowerCase())) {
+                  hasNearbyLink = true;
+                  nearbyLinkHref = sibling.href;
+                  matchedLinkPattern = linkPattern;
+                  break;
+                }
+              }
+              if (hasNearbyLink) break;
+            }
+            
+            // Check children
+            if (!hasNearbyLink) {
+              const childLinks = element.querySelectorAll('a');
+              for (const childLink of childLinks) {
+                const childHref = childLink.href?.toLowerCase() || '';
+                for (const linkPattern of pattern.linkPatterns) {
+                  if (childHref.includes(linkPattern.toLowerCase())) {
+                    hasNearbyLink = true;
+                    nearbyLinkHref = childLink.href;
+                    matchedLinkPattern = linkPattern;
+                    break;
+                  }
+                }
+                if (hasNearbyLink) break;
+              }
+            }
+          }
+          
+          // If we found both text and link (either direct or nearby)
+          if (hasText && (hasLink || hasNearbyLink)) {
+            const rect = element.getBoundingClientRect();
+            
+            // Only include visible elements
+            if (rect.width > 0 && rect.height > 0) {
+              foundItems.push({
+                element: {
+                  tagName: element.tagName,
+                  text: element.textContent?.trim().substring(0, 100),
+                  href: element.href || nearbyLinkHref || 'N/A',
+                  matchedPattern: matchedLinkPattern,
+                  rect: {
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                    top: rect.top,
+                    left: rect.left
+                  }
+                },
+                socialMedia: pattern.name,
+                priority: pattern.priority
+              });
+            }
+          }
+        }
+        
+        return foundItems;
+      }, pattern);
+
+      if (foundElements.length > 0) {
+        console.log(`✅ Found ${foundElements.length} ${pattern.name} link(s)`);
+        foundSocialLinks.push(...foundElements);
+      } else {
+        console.log(`ℹ️ No ${pattern.name} links found`);
+      }
+    }
+
+    if (foundSocialLinks.length === 0) {
+      console.log('ℹ️ No social media links found');
+      return {
+        success: false,
+        reason: "No social media links found",
+        socialLinksFound: [],
+        totalLinksFound: 0,
+        screenshotTaken: false
+      };
+    }
+
+    // Sort found links by priority (lower number = higher priority)
+    foundSocialLinks.sort((a, b) => a.priority - b.priority);
+
+    console.log(`🎯 Found total ${foundSocialLinks.length} social media links:`);
+    foundSocialLinks.forEach((link, index) => {
+      console.log(`   ${index + 1}. ${link.socialMedia}: ${link.element.href}`);
+    });
+
+    // Take screenshot of only the first (highest priority) social media link
+    const firstSocialLink = foundSocialLinks[0];
+    console.log(`📸 Taking screenshot of: ${firstSocialLink.socialMedia}`);
+    
+    let screenshotResult = null;
+    
+    try {
+      // Scroll to center the element in the viewport
+      await this.page.evaluate((elementRect) => {
+        const elementCenterY = elementRect.top + window.scrollY + (elementRect.height / 2);
+        const viewportCenterOffset = window.innerHeight / 2;
+        const targetScrollY = elementCenterY - viewportCenterOffset;
+        
+        window.scrollTo({
+          top: Math.max(0, targetScrollY),
+          behavior: 'smooth'
+        });
+      }, firstSocialLink.element.rect);
+
+      // Wait for smooth scroll to complete
+      await this.page.waitForTimeout(2000);
+
+      // Re-locate the element after scrolling to get accurate viewport coordinates
+      const currentElementRect = await this.page.evaluate((originalText, socialMedia) => {
+        const allElements = document.querySelectorAll('a, div, span, p, li, button');
+        const pattern = socialMedia.toLowerCase();
+        
+        for (const element of allElements) {
+          const elementText = element.textContent?.toLowerCase() || '';
+          const elementHref = element.href?.toLowerCase() || '';
+          const parentText = element.parentElement?.textContent?.toLowerCase() || '';
+          
+          // Try to find the same element by matching text and social media pattern
+          if ((elementText.includes(pattern) || parentText.includes(pattern)) &&
+              (elementHref.includes(pattern) || elementText.includes(originalText.toLowerCase().substring(0, 20)))) {
+            const rect = element.getBoundingClientRect();
+            return {
+              x: rect.x,
+              y: rect.y,
+              width: rect.width,
+              height: rect.height,
+              centerX: rect.x + rect.width / 2,
+              centerY: rect.y + rect.height / 2
+            };
+          }
+        }
+        return null;
+      }, firstSocialLink.element.text, firstSocialLink.socialMedia);
+
+      // Get viewport dimensions
+      const viewport = await this.page.viewport();
+      
+      // Use current element position if found, otherwise fallback to viewport center
+      const elementCenterX = currentElementRect ? currentElementRect.centerX : viewport.width / 2;
+      const elementCenterY = currentElementRect ? currentElementRect.centerY : viewport.height / 2;
+
+      // Calculate small rectangular screenshot area around the centered element
+      const smallRectWidth = 300;  // Fixed small rectangle width
+      const smallRectHeight = 150; // Fixed small rectangle height
+      
+      const clipDimensions = {
+        x: Math.max(0, elementCenterX - (smallRectWidth / 2)),
+        y: Math.max(0, elementCenterY - (smallRectHeight / 2)),
+        width: smallRectWidth,
+        height: smallRectHeight
+      };
+
+      // Ensure the clip dimensions don't go outside viewport bounds
+      clipDimensions.x = Math.min(clipDimensions.x, viewport.width - smallRectWidth);
+      clipDimensions.y = Math.min(clipDimensions.y, viewport.height - smallRectHeight);
+
+      // Add visual bounding box to show screenshot area
+      await this.addBoundingBox(clipDimensions);
+      await this.page.waitForTimeout(1000); // Show bounding box briefly
+
+      // Remove bounding box before taking screenshot
+      await this.removeBoundingBox();
+
+      // Take screenshot of the social media link
+      const gbpLinksDirectory = "./screenshots/gbp_social_links_screenshots";
+      screenshotResult = await this.startScreenshotOperation(
+        `${nameAddress}_${firstSocialLink.socialMedia}`,
+        gbpLinksDirectory,
+        clipDimensions,
+        `social_${firstSocialLink.socialMedia.toLowerCase()}`
+      );
+
+      console.log(`✅ Screenshot taken for ${firstSocialLink.socialMedia}`);
+
+    } catch (error) {
+      console.error(`❌ Error taking screenshot of ${firstSocialLink.socialMedia}:`, error.message);
+      screenshotResult = {
+        success: false,
+        error: error.message
+      };
+    }
+
+    // Prepare detailed report of all found links
+    const socialLinksReport = foundSocialLinks.map((link, index) => ({
+      rank: index + 1,
+      socialMedia: link.socialMedia,
+      priority: link.priority,
+      text: link.element.text,
+      href: link.element.href,
+      matchedPattern: link.element.matchedPattern,
+      screenshotTaken: index === 0 // Only first link gets screenshot
+    }));
+
+    return {
+      success: screenshotResult ? screenshotResult.success : false,
+      socialLinksFound: socialLinksReport,
+      totalLinksFound: foundSocialLinks.length,
+      screenshotTaken: screenshotResult ? screenshotResult.success : false,
+      screenshotDetails: screenshotResult,
+      primarySocialMedia: firstSocialLink.socialMedia,
+      error: screenshotResult && !screenshotResult.success ? screenshotResult.error : null
+    };
+
+  } catch (error) {
+    console.error("❌ Error in handleCaptureLinks:", error.message);
+    return {
+      success: false,
+      error: error.message,
+      socialLinksFound: [],
+      totalLinksFound: 0,
+      screenshotTaken: false
+    };
   }
+}
 
 
   //take GBP Images screenshot
@@ -719,6 +1018,9 @@ class GoogleBusinessProfileScraper {
         case "gbp-reviews":
           screenshotDir = "./screenshots/gbp_reviews_screenshots";
           break;
+        case "gbp-social-links": // ADD THIS CASE
+          screenshotDir = "./screenshots/gbp_social_links_screenshots";
+          break;
         default:
           console.warn(`⚠️ No screenshotDir found for entity: ${entity}`);
           continue; // skip this iteration if no matching case
@@ -810,7 +1112,7 @@ async function InitializeGBPBrowserSearchScreenshot() {
     } catch (error) {
         console.error('❌ Script execution failed:', error.message);
     } finally {
-        await scraper.cleanup();
+        // await scraper.cleanup();
     }
 }
 
