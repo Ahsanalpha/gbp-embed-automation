@@ -21,7 +21,7 @@ class GoogleBusinessProfileScraper {
     this.results = {
       "gbp-images": [],
       "gbp-reviews": [],
-      "gbp-products": [], // Added new result category
+      "gbp-social-links": [], // New category for special class elements
     };
   }
 
@@ -42,6 +42,9 @@ class GoogleBusinessProfileScraper {
   async initialize() {
     try {
       console.log("🚀 Initializing browser...");
+
+      // Ensure screenshots directory exists
+      // await fs.mkdir(this.options.screenshotDir, { recursive: true });
 
       // Get default Chrome profile path
       const defaultProfilePath = this.getDefaultProfilePath();
@@ -211,41 +214,41 @@ class GoogleBusinessProfileScraper {
       await this.page.waitForTimeout(3000);
 
       // Look for "See photos" and handle photo modal (only screenshot)
-      // const gbpImageScreenshot = await this.handleSeePhotos(nameAddress, record.City);
-      // const screenshotResult = this.createProcessedObject(
-      //   'gbp-images',
-      //   gbpImageScreenshot,
-      //   index,
-      //   searchTerm,
-      //   record
-      // );
-      // this.results["gbp-images"].push(screenshotResult);
-
-      // Take GBP Reviews screenshot
-      // const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
-      //   nameAddress, record.City
-      // );
-      // const reviewsScreenshotResult = this.createProcessedObject(
-      //   'gbp-reviews',
-      //   gbpReviewsScreenshot,
-      //   index,
-      //   searchTerm,
-      //   record
-      // );
-      // this.results["gbp-reviews"].push(reviewsScreenshotResult);
-
-      // NEW: Handle product modal screenshot
-      const gbpProductsScreenshot = await this.handleProductModal(
-        nameAddress, record.City
-      );
-      const productsScreenshotResult = this.createProcessedObject(
-        'gbp-products',
-        gbpProductsScreenshot,
+      const gbpImageScreenshot = await this.handleSeePhotos(nameAddress, record.City);
+      const screenshotResult = this.createProcessedObject(
+        'gbp-images',
+        gbpImageScreenshot,
         index,
         searchTerm,
         record
       );
-      this.results["gbp-products"].push(productsScreenshotResult);
+      this.results["gbp-images"].push(screenshotResult);
+
+      // Take GBP Reviews screenshot
+      const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
+        nameAddress, record.City
+      );
+      const reviewsScreenshotResult = this.createProcessedObject(
+        'gbp-reviews',
+        gbpReviewsScreenshot,
+        index,
+        searchTerm,
+        record
+      );
+      this.results["gbp-reviews"].push(reviewsScreenshotResult);
+
+      // NEW: Check for social media presence element and screenshot it
+      const socialMediaElementScreenshot = await this.handleGBPLinks(
+        nameAddress, record.City
+      );
+      const socialMediaElementResult = this.createProcessedObject(
+        'gbp-social-links',
+        socialMediaElementScreenshot,
+        index,
+        searchTerm,
+        record
+      );
+      this.results["gbp-social-links"].push(socialMediaElementResult);
 
     } catch (error) {
       console.error(`❌ Error searching for ${nameAddress}:`, error.message);
@@ -257,14 +260,301 @@ class GoogleBusinessProfileScraper {
         await this.page.waitForTimeout(5000); // Wait before retry
         return await this.searchGoogleBusiness(
           nameAddress,
+          3,
           retryCount + 1,
-          index,
-          searchTerm,
-          record
+          index
         );
       }
 
       throw error;
+    }
+  }
+
+  // NEW METHOD: Handle social links detection and screenshot based on data-attrid
+  async handleGBPLinks(nameAddress, city) {
+    try {
+      console.log('🎯 Looking for element with data-attrid="kc:/common/topic:social media presence"...');
+
+      // Target attribute to look for
+      const targetAttribute = 'kc:/common/topic:social media presence';
+      
+      // Check if element with the specific data-attrid exists on the page
+      const foundElement = await this.page.evaluate((targetAttr) => {
+        const element = document.querySelector(`[data-attrid="${targetAttr}"]`);
+        
+        if (!element) {
+          return null;
+        }
+
+        const rect = element.getBoundingClientRect();
+        
+        // Only include visible elements
+        if (rect.width > 0 && rect.height > 0 && 
+            rect.top >= 0 && rect.left >= 0 && 
+            rect.bottom <= window.innerHeight && 
+            rect.right <= window.innerWidth) {
+          return {
+            dataAttrid: targetAttr,
+            rect: {
+              x: Math.round(rect.left),
+              y: Math.round(rect.top),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height)
+            },
+            text: element.textContent?.substring(0, 200) || '', // First 200 chars for identification
+            tagName: element.tagName.toLowerCase(),
+            className: element.className || '',
+            id: element.id || ''
+          };
+        }
+        
+        return null;
+      }, targetAttribute);
+
+      if (!foundElement) {
+        console.log('ℹ️ No element with social media presence data-attrid found on the page');
+        return { 
+          success: false, 
+          reason: "No social media presence element found",
+          searchedAttribute: targetAttribute
+        };
+      }
+
+      console.log(`✅ Found social media presence element:`, {
+        tag: foundElement.tagName,
+        class: foundElement.className,
+        id: foundElement.id,
+        dimensions: `${foundElement.rect.width}x${foundElement.rect.height}`
+      });
+
+      // Take screenshot of the found element
+      const specialElementsDirectory = "./screenshots/gbp_social_links_screenshots";
+      await this.ensureFolderExists(specialElementsDirectory);
+
+      try {
+        // Add some padding around the element for better visibility
+        const padding = 15;
+        const clipDimensions = {
+          x: Math.max(0, foundElement.rect.x - padding),
+          y: Math.max(0, foundElement.rect.y - padding),
+          width: Math.min(1920 - foundElement.rect.x + padding, foundElement.rect.width + (padding * 2)),
+          height: Math.min(1200 - foundElement.rect.y + padding, foundElement.rect.height + (padding * 2))
+        };
+
+        console.log(`📸 Taking screenshot of social links element (${foundElement.tagName})`);
+        
+        // Highlight the element briefly
+        // await this.highlightSocialMediaElement();
+        await this.page.waitForTimeout(1500);
+
+        const screenshot = await this.takeSpecialElementScreenshot(
+          nameAddress,
+          city,
+          'social-links',
+          0,
+          clipDimensions,
+          specialElementsDirectory,
+          foundElement
+        );
+
+        // Remove highlight
+        // await this.removeHighlight();
+
+        return {
+          success: true,
+          foundElements: 1,
+          screenshots: [screenshot],
+          searchedAttribute: targetAttribute,
+          elementInfo: foundElement
+        };
+
+      } catch (elementError) {
+        console.error(`❌ Error screenshotting social links element:`, elementError.message);
+        return {
+          success: false,
+          error: elementError.message,
+          elementInfo: foundElement,
+          searchedAttribute: targetAttribute
+        };
+      }
+
+    } catch (error) {
+      console.error("❌ Error handling social links element:", error.message);
+      return {
+        success: false,
+        error: error.message,
+        searchedAttribute: 'kc:/common/topic:social media presence'
+      };
+    }
+  }
+
+  // NEW METHOD: Handle posts frequency element detection and screenshot based on data-attrid
+  async handlePostsFrequencyElement(nameAddress, city) {
+    try {
+      console.log('🎯 Looking for element with data-attrid="kc:/local:posts"...');
+
+      // Target attribute to look for
+      const targetPostsAttribute = 'kc:/local:posts';
+      
+      // Check if element with the specific data-attrid exists on the page
+      const foundPostsElement = await this.page.evaluate((targetAttr) => {
+        const element = document.querySelector(`[data-attrid="${targetAttr}"]`);
+        
+        if (!element) {
+          return null;
+        }
+
+        const rect = element.getBoundingClientRect();
+        
+        // Only include visible elements
+        if (rect.width > 0 && rect.height > 0 && 
+            rect.top >= 0 && rect.left >= 0 && 
+            rect.bottom <= window.innerHeight && 
+            rect.right <= window.innerWidth) {
+          return {
+            dataAttrid: targetAttr,
+            rect: {
+              x: Math.round(rect.left),
+              y: Math.round(rect.top),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height)
+            },
+            text: element.textContent?.substring(0, 250) || '', // First 250 chars for posts content
+            tagName: element.tagName.toLowerCase(),
+            className: element.className || '',
+            id: element.id || ''
+          };
+        }
+        
+        return null;
+      }, targetPostsAttribute);
+
+      if (!foundPostsElement) {
+        console.log('ℹ️ No element with posts frequency data-attrid found on the page');
+        return { 
+          success: false, 
+          reason: "No posts frequency element found",
+          searchedAttribute: targetPostsAttribute
+        };
+      }
+
+      console.log(`✅ Found posts frequency element:`, {
+        tag: foundPostsElement.tagName,
+        class: foundPostsElement.className,
+        id: foundPostsElement.id,
+        dimensions: `${foundPostsElement.rect.width}x${foundPostsElement.rect.height}`
+      });
+
+      // Take screenshot of the found posts element
+      const postsFrequencyDirectory = "./screenshots/gbp_posts_frequency_screenshots";
+      await this.ensureFolderExists(postsFrequencyDirectory);
+
+      try {
+        // Add some padding around the element for better visibility
+        const postsPadding = 20;
+        const postsClipDimensions = {
+          x: Math.max(0, foundPostsElement.rect.x - postsPadding),
+          y: Math.max(0, foundPostsElement.rect.y - postsPadding),
+          width: Math.min(1920 - foundPostsElement.rect.x + postsPadding, foundPostsElement.rect.width + (postsPadding * 2)),
+          height: Math.min(1200 - foundPostsElement.rect.y + postsPadding, foundPostsElement.rect.height + (postsPadding * 2))
+        };
+
+        console.log(`📸 Taking screenshot of posts frequency element (${foundPostsElement.tagName})`);
+        
+        // Highlight the posts element briefly
+        // await this.highlightPostsFrequencyElement();
+        await this.page.waitForTimeout(1800);
+
+        const postsScreenshot = await this.takePostsFrequencyScreenshot(
+          nameAddress,
+          city,
+          'posts-frequency',
+          0,
+          postsClipDimensions,
+          postsFrequencyDirectory,
+          foundPostsElement
+        );
+
+        // Remove highlight
+        // await this.removeHighlight();
+
+        return {
+          success: true,
+          foundElements: 1,
+          screenshots: [postsScreenshot],
+          searchedAttribute: targetPostsAttribute,
+          elementInfo: foundPostsElement
+        };
+
+      } catch (postsElementError) {
+        console.error(`❌ Error screenshotting posts frequency element:`, postsElementError.message);
+        return {
+          success: false,
+          error: postsElementError.message,
+          elementInfo: foundPostsElement,
+          searchedAttribute: targetPostsAttribute
+        };
+      }
+
+    } catch (error) {
+      console.error("❌ Error handling posts frequency element:", error.message);
+      return {
+        success: false,
+        error: error.message,
+        searchedAttribute: 'kc:/local:posts'
+      };
+    }
+  }
+
+  // NEW METHOD: Take screenshot of special element
+  async takeSpecialElementScreenshot(
+    nameAddress,
+    city,
+    className,
+    elementIndex,
+    clipDimensions,
+    screenshotDirectory,
+    elementInfo
+  ) {
+    try {
+      const sanitizedName = nameAddress
+        .replace(/[^a-zA-Z0-9\s]/g, "")
+        .replace(/\s+/g, "_");
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `${sanitizedName}_${className}_${elementIndex}_${timestamp}.png`;
+      const filepath = path.join(screenshotDirectory, filename);
+
+      // Take screenshot of the specific element area
+      await this.page.screenshot({
+        path: filepath,
+        fullPage: false,
+        type: "png",
+        clip: clipDimensions,
+      });
+
+      console.log(`📸 Special element screenshot saved: ${filename}`);
+      console.log(`📐 Element dimensions: ${clipDimensions.width}x${clipDimensions.height}`);
+
+      return {
+        success: true,
+        filepath: filepath,
+        filename: filename,
+        city,
+        className: className,
+        elementIndex: elementIndex,
+        elementInfo: elementInfo,
+        type: "special-element",
+        dimensions: clipDimensions,
+      };
+    } catch (error) {
+      console.error(`❌ Failed to take special element screenshot:`, error.message);
+      return {
+        success: false,
+        error: error.message,
+        className: className,
+        elementIndex: elementIndex,
+        type: "special-element",
+      };
     }
   }
 
@@ -283,182 +573,7 @@ class GoogleBusinessProfileScraper {
     return processedResult;
   }
 
-  // NEW: Handle product modal screenshot
-  async handleProductModal(nameAddress, city) {
-    try {
-      console.log('🛍️ Looking for product modal triggers...');
-
-      let productTrigger = null;
-      let triggerType = null;
-
-      // First, look for div with class "gsAWBc" containing an anchor tag
-      try {
-        const divElement = await this.page.$('.gsAWBc');
-        if (divElement) {
-          // Look for anchor tag inside this div
-          const anchorTag = await divElement.$('a');
-          if (anchorTag) {
-            await anchorTag.click();
-            await this.page.waitForTimeout(5000);
-            // const isVisible = await anchorTag.isIntersectingViewport();
-            // if (isVisible) {
-            productTrigger = anchorTag;
-            triggerType = 'gsAWBc-anchor';
-            console.log('🎯 Found product trigger: div.gsAWBc > a');
-            // }
-          }
-        }
-      } catch (error) {
-        console.log('⚠️ gsAWBc div not found, trying alternative...');
-      }
-
-      // If not found, look for span with class "tE8mme"
-      if (!productTrigger) {
-        try {
-          const spanElement = await this.page.$('.tE8mme');
-          if (spanElement) {
-            // const isVisible = await spanElement.isIntersectingViewport();
-            await spanElement.click();
-            await this.page.waitForTimeout(2000);
-            // if (isVisible) {
-              productTrigger = spanElement;
-              triggerType = 'tE8mme-span';
-              console.log('🎯 Found product trigger: span.tE8mme');
-            // }
-          }
-        } catch (error) {
-          console.log('⚠️ tE8mme span not found either');
-        }
-      }
-
-      if (!productTrigger) {
-        console.log('ℹ️ No product modal trigger found');
-        return { 
-          success: false, 
-          reason: "No product modal trigger found (gsAWBc or tE8mme)",
-          trigger_type: null
-        };
-      }
-
-      // Click the found trigger element
-      console.log(`✅ Clicked product modal trigger (${triggerType})`);
-
-      // Wait for modal to appear
-      await this.page.waitForTimeout(3000);
-
-      // Wait for product modal to load - try multiple selectors
-      const modalSelectors = [
-        '[role="dialog"]',
-        '.modal',
-        '[data-testid="product-modal"]',
-        '[data-testid="products-modal"]',
-        '.product-modal',
-        '.products-container'
-      ];
-
-      let modalFound = false;
-      for (const selector of modalSelectors) {
-        try {
-          await this.page.waitForSelector(selector, { timeout: 5000 });
-          modalFound = true;
-          console.log(`📦 Product modal found with selector: ${selector}`);
-          break;
-        } catch (error) {
-          // Continue to next selector
-        }
-      }
-
-      if (!modalFound) {
-        console.log("⚠️ Product modal selector not found, proceeding with screenshot anyway");
-      }
-
-      // Extended wait for all product images and content to load and render completely
-      console.log("⏳ Waiting for product content to load and render...");
-      await this.page.waitForTimeout(8000); // Extended delay for product content rendering
-
-      // Wait for images to load
-      await this.page.evaluate(() => {
-        return new Promise((resolve) => {
-          const images = Array.from(document.querySelectorAll('img'));
-          let loadedCount = 0;
-          const totalImages = images.length;
-
-          if (totalImages === 0) {
-            resolve();
-            return;
-          }
-
-          images.forEach((img) => {
-            if (img.complete) {
-              loadedCount++;
-            } else {
-              img.onload = () => {
-                loadedCount++;
-                if (loadedCount === totalImages) {
-                  resolve();
-                }
-              };
-              img.onerror = () => {
-                loadedCount++;
-                if (loadedCount === totalImages) {
-                  resolve();
-                }
-              };
-            }
-          });
-
-          // Fallback timeout
-          setTimeout(resolve, 5000);
-        });
-      });
-
-      const gbpProductsDirectory = "./screenshots/gbp_products_screenshots";
-      const gbpProductsClipDimension = {
-        x: 300,
-        y: 150,
-        width: 1300,
-        height: 800,
-      };
-
-      const productScreenshot = await this.startScreenshotOperation(
-        nameAddress,
-        city,
-        gbpProductsDirectory,
-        gbpProductsClipDimension,
-        "gbp_products"
-      );
-
-      // Add trigger type to the result
-      productScreenshot.trigger_type = triggerType;
-
-      // Close modal with Esc key
-      await this.page.keyboard.press("Escape");
-      console.log("✅ Closed product modal with Escape key");
-
-      // Wait for modal to close
-      await this.page.waitForTimeout(1000);
-
-      return productScreenshot;
-    } catch (error) {
-      console.error("❌ Error handling product modal:", error.message);
-
-      // Try to close any open modal
-      try {
-        await this.page.keyboard.press("Escape");
-        await this.page.waitForTimeout(500);
-      } catch (closeError) {
-        // Ignore close errors
-      }
-
-      return {
-        success: false,
-        error: error.message,
-        trigger_type: null
-      };
-    }
-  }
-
-  // Take GBP reviews screenshot
+  //take GBP reviews screenshot
   async handleReviewsScreenshot(nameAddress, city) {
     try {
       const gbpReviewsDirectory = "./screenshots/gbp_reviews_screenshots";
@@ -477,7 +592,7 @@ class GoogleBusinessProfileScraper {
       );
       return photoScreenshot;
     } catch (error) {
-      console.error("❌ Error handling reviews screenshot:", error.message);
+      console.error("❌ Error handling see photos:", error.message);
 
       // Try to close any open modal
       try {
@@ -494,7 +609,7 @@ class GoogleBusinessProfileScraper {
     }
   }
 
-  // Take GBP Images screenshot
+  //take GBP Images screenshot
   async handleSeePhotos(nameAddress, city) {
     try {
       console.log('🔍 Looking for "See photos" button...');
@@ -502,6 +617,7 @@ class GoogleBusinessProfileScraper {
       // Look for "See photos" button with various selectors
       const seePhotosSelectors = [
         'button:has-text("See photos")',
+        // 'a:has-text("See photos")',
         '[role="button"]:has-text("See photos")',
       ];
 
@@ -515,7 +631,7 @@ class GoogleBusinessProfileScraper {
             // Verify it's actually clickable and visible
             const isVisible = await seePhotosButton.isIntersectingViewport();
             if (isVisible) {
-              console.log('📸 Found "See photos" button:', selector);
+              console.log('📸 Found "See photos" button:::', selector);
               break;
             } else {
               seePhotosButton = null;
@@ -534,6 +650,9 @@ class GoogleBusinessProfileScraper {
           );
           return elements.find(
             (el) => el.textContent?.toLowerCase().includes("see photos")
+            //  ||
+            // el.textContent?.toLowerCase().includes('photos') ||
+            // el.getAttribute('aria-label')?.toLowerCase().includes('photos')
           );
         });
 
@@ -833,7 +952,7 @@ class GoogleBusinessProfileScraper {
 
       await this.searchGoogleBusiness(
         searchTerm,
-        0,
+        3,
         index,
         searchTerm,
         record
@@ -878,8 +997,8 @@ class GoogleBusinessProfileScraper {
         case "gbp-reviews":
           screenshotDir = "./screenshots/gbp_reviews_screenshots";
           break;
-        case "gbp-products": // Added new case
-          screenshotDir = "./screenshots/gbp_products_screenshots";
+        case "gbp-social-links": // Handle social media presence elements directory
+          screenshotDir = "./screenshots/gbp_social_links_screenshots";
           break;
         default:
           console.warn(`⚠️ No screenshotDir found for entity: ${entity}`);
@@ -920,6 +1039,11 @@ class GoogleBusinessProfileScraper {
       await this.saveResults();
 
       console.log("\n🎉 Batch processing completed!");
+      console.log(`📊 Summary:`);
+      console.log(`  - GBP Images: ${this.results["gbp-images"].length} processed`);
+      console.log(`  - GBP Reviews: ${this.results["gbp-reviews"].length} processed`);
+      console.log(`  - Social Media Elements: ${this.results["gbp-social-links"].length} processed`);
+      
       return this.results;
     } catch (error) {
       console.error("❌ Batch processing failed:", error.message);
