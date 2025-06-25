@@ -22,6 +22,7 @@ class GoogleBusinessProfileScraper {
       "gbp-images": [],
       "gbp-reviews": [],
       "gbp-social-links": [], // New category for special class elements
+      "gbp-posts-frequency" : []
     };
   }
 
@@ -64,7 +65,6 @@ class GoogleBusinessProfileScraper {
           "--start-maximized",
           "--disable-geolocation", // Disables location entirely
           "--use-fake-ui-for-media-stream", // Prevents permission prompt
-          "--start-fullscreen",
         ],
       });
 
@@ -214,28 +214,28 @@ class GoogleBusinessProfileScraper {
       await this.page.waitForTimeout(3000);
 
       // Look for "See photos" and handle photo modal (only screenshot)
-      const gbpImageScreenshot = await this.handleSeePhotos(nameAddress, record.City);
-      const screenshotResult = this.createProcessedObject(
-        'gbp-images',
-        gbpImageScreenshot,
-        index,
-        searchTerm,
-        record
-      );
-      this.results["gbp-images"].push(screenshotResult);
+      // const gbpImageScreenshot = await this.handleSeePhotos(nameAddress, record.City);
+      // const screenshotResult = this.createProcessedObject(
+      //   'gbp-images',
+      //   gbpImageScreenshot,
+      //   index,
+      //   searchTerm,
+      //   record
+      // );
+      // this.results["gbp-images"].push(screenshotResult);
 
       // Take GBP Reviews screenshot
-      const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
-        nameAddress, record.City
-      );
-      const reviewsScreenshotResult = this.createProcessedObject(
-        'gbp-reviews',
-        gbpReviewsScreenshot,
-        index,
-        searchTerm,
-        record
-      );
-      this.results["gbp-reviews"].push(reviewsScreenshotResult);
+      // const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
+      //   nameAddress, record.City
+      // );
+      // const reviewsScreenshotResult = this.createProcessedObject(
+      //   'gbp-reviews',
+      //   gbpReviewsScreenshot,
+      //   index,
+      //   searchTerm,
+      //   record
+      // );
+      // this.results["gbp-reviews"].push(reviewsScreenshotResult);
 
       // NEW: Check for social media presence element and screenshot it
       const socialMediaElementScreenshot = await this.handleGBPLinks(
@@ -249,6 +249,19 @@ class GoogleBusinessProfileScraper {
         record
       );
       this.results["gbp-social-links"].push(socialMediaElementResult);
+
+      // NEW: Check for POSTS FREQUENCY element and screenshot it
+      const postsFrequencyScreenshot = await this.handlePostsFrequencyElement(
+        nameAddress, record.City
+      );
+      const postsFrequencyResult = this.createProcessedObject(
+        'gbp-posts-frequency',
+        postsFrequencyScreenshot,
+        index,
+        searchTerm,
+        record
+      );
+      this.results["gbp-posts-frequency"].push(postsFrequencyResult);
 
     } catch (error) {
       console.error(`❌ Error searching for ${nameAddress}:`, error.message);
@@ -272,236 +285,228 @@ class GoogleBusinessProfileScraper {
 
   // NEW METHOD: Handle social links detection and screenshot based on data-attrid
   async handleGBPLinks(nameAddress, city) {
-    try {
-      console.log('🎯 Looking for element with data-attrid="kc:/common/topic:social media presence"...');
+  try {
+    console.log('🎯 Looking for element with data-attrid="kc:/common/topic:social media presence"...');
 
-      // Target attribute to look for
-      const targetAttribute = 'kc:/common/topic:social media presence';
-      
-      // Check if element with the specific data-attrid exists on the page
-      const foundElement = await this.page.evaluate((targetAttr) => {
-        const element = document.querySelector(`[data-attrid="${targetAttr}"]`);
-        
-        if (!element) {
-          return null;
-        }
+    const targetAttribute = 'kc:/common/topic:social media presence';
 
-        const rect = element.getBoundingClientRect();
-        
-        // Only include visible elements
-        if (rect.width > 0 && rect.height > 0 && 
-            rect.top >= 0 && rect.left >= 0 && 
-            rect.bottom <= window.innerHeight && 
-            rect.right <= window.innerWidth) {
-          return {
-            dataAttrid: targetAttr,
-            rect: {
-              x: Math.round(rect.left),
-              y: Math.round(rect.top),
-              width: Math.round(rect.width),
-              height: Math.round(rect.height)
-            },
-            text: element.textContent?.substring(0, 200) || '', // First 200 chars for identification
-            tagName: element.tagName.toLowerCase(),
-            className: element.className || '',
-            id: element.id || ''
-          };
-        }
-        
-        return null;
-      }, targetAttribute);
+    // Scroll element into view and get full metadata
+    const foundElement = await this.page.evaluate((targetAttr) => {
+      const element = document.querySelector(`[data-attrid="${targetAttr}"]`);
 
-      if (!foundElement) {
-        console.log('ℹ️ No element with social media presence data-attrid found on the page');
-        return { 
-          success: false, 
-          reason: "No social media presence element found",
-          searchedAttribute: targetAttribute
-        };
-      }
+      if (!element) return null;
 
-      console.log(`✅ Found social media presence element:`, {
-        tag: foundElement.tagName,
-        class: foundElement.className,
-        id: foundElement.id,
-        dimensions: `${foundElement.rect.width}x${foundElement.rect.height}`
-      });
+      // Scroll into view if necessary
+      element.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
 
-      // Take screenshot of the found element
-      const specialElementsDirectory = "./screenshots/gbp_social_links_screenshots";
-      await this.ensureFolderExists(specialElementsDirectory);
+      const rect = element.getBoundingClientRect();
 
-      try {
-        // Add some padding around the element for better visibility
-        const padding = 15;
-        const clipDimensions = {
-          x: Math.max(0, foundElement.rect.x - padding),
-          y: Math.max(0, foundElement.rect.y - padding),
-          width: Math.min(1920 - foundElement.rect.x + padding, foundElement.rect.width + (padding * 2)),
-          height: Math.min(1200 - foundElement.rect.y + padding, foundElement.rect.height + (padding * 2))
-        };
+      return {
+        dataAttrid: targetAttr,
+        rect: {
+          x: Math.round(rect.left + window.scrollX),
+          y: Math.round(rect.top + window.scrollY),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        },
+        text: element.textContent?.substring(0, 200) || '',
+        tagName: element.tagName.toLowerCase(),
+        className: element.className || '',
+        id: element.id || ''
+      };
+    }, targetAttribute);
 
-        console.log(`📸 Taking screenshot of social links element (${foundElement.tagName})`);
-        
-        // Highlight the element briefly
-        // await this.highlightSocialMediaElement();
-        await this.page.waitForTimeout(1500);
-
-        const screenshot = await this.takeSpecialElementScreenshot(
-          nameAddress,
-          city,
-          'social-links',
-          0,
-          clipDimensions,
-          specialElementsDirectory,
-          foundElement
-        );
-
-        // Remove highlight
-        // await this.removeHighlight();
-
-        return {
-          success: true,
-          foundElements: 1,
-          screenshots: [screenshot],
-          searchedAttribute: targetAttribute,
-          elementInfo: foundElement
-        };
-
-      } catch (elementError) {
-        console.error(`❌ Error screenshotting social links element:`, elementError.message);
-        return {
-          success: false,
-          error: elementError.message,
-          elementInfo: foundElement,
-          searchedAttribute: targetAttribute
-        };
-      }
-
-    } catch (error) {
-      console.error("❌ Error handling social links element:", error.message);
+    if (!foundElement) {
+      console.log('ℹ️ No element with social media presence data-attrid found on the page');
       return {
         success: false,
-        error: error.message,
-        searchedAttribute: 'kc:/common/topic:social media presence'
+        reason: "No social media presence element found",
+        searchedAttribute: targetAttribute
       };
     }
+
+    console.log(`✅ Found social media presence element:`, {
+      tag: foundElement.tagName,
+      class: foundElement.className,
+      id: foundElement.id,
+      dimensions: `${foundElement.rect.width}x${foundElement.rect.height}`
+    });
+
+    const specialElementsDirectory = "./screenshots/gbp_social_links_screenshots";
+    await this.ensureFolderExists(specialElementsDirectory);
+
+    const padding = 15;
+    const clipDimensions = {
+      x: Math.max(0, foundElement.rect.x - padding),
+      y: Math.max(0, foundElement.rect.y - padding),
+      width: foundElement.rect.width + padding * 2,
+      height: foundElement.rect.height + padding * 2,
+    };
+
+    const screenshot = await this.takeSpecialElementScreenshot(
+      nameAddress,
+      city,
+      'social-links',
+      0,
+      clipDimensions,
+      specialElementsDirectory,
+      foundElement
+    );
+
+    return {
+      success: true,
+      foundElements: 1,
+      screenshots: [screenshot],
+      searchedAttribute: targetAttribute,
+      elementInfo: foundElement
+    };
+
+  } catch (error) {
+    console.error("❌ Error handling social links element:", error.message);
+    return {
+      success: false,
+      error: error.message,
+      searchedAttribute: 'kc:/common/topic:social media presence'
+    };
   }
+}
+
 
   // NEW METHOD: Handle posts frequency element detection and screenshot based on data-attrid
-  async handlePostsFrequencyElement(nameAddress, city) {
+async handlePostsFrequencyElement(nameAddress, city) {
+  try {
+    console.log('🎯 Looking for element with data-attrid="kc:/local:posts"...');
+
+    const targetPostsAttribute = 'kc:/local:posts';
+
+    const foundPostsElement = await this.page.evaluate((targetAttr) => {
+      const element = document.querySelector(`[data-attrid="${targetAttr}"]`);
+      if (!element) return null;
+
+      // Scroll into view so we can capture it even if it's offscreen
+      element.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+
+      const rect = element.getBoundingClientRect();
+
+      return {
+        dataAttrid: targetAttr,
+        rect: {
+          x: Math.round(rect.left + window.scrollX),
+          y: Math.round(rect.top + window.scrollY),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        },
+        text: element.textContent?.substring(0, 250) || '',
+        tagName: element.tagName.toLowerCase(),
+        className: element.className || '',
+        id: element.id || ''
+      };
+    }, targetPostsAttribute);
+
+    if (!foundPostsElement) {
+      console.log('ℹ️ No element with posts frequency data-attrid found on the page');
+      return {
+        success: false,
+        reason: "No posts frequency element found",
+        searchedAttribute: targetPostsAttribute
+      };
+    }
+
+    console.log(`✅ Found posts frequency element:`, {
+      tag: foundPostsElement.tagName,
+      class: foundPostsElement.className,
+      id: foundPostsElement.id,
+      dimensions: `${foundPostsElement.rect.width}x${foundPostsElement.rect.height}`
+    });
+
+    const postsFrequencyDirectory = "./screenshots/gbp_posts_frequency_screenshots";
+    await this.ensureFolderExists(postsFrequencyDirectory);
+
+    const padding = 20;
+    const postsClipDimensions = {
+      x: Math.max(0, foundPostsElement.rect.x - padding),
+      y: Math.max(0, foundPostsElement.rect.y - padding),
+      width: foundPostsElement.rect.width + padding * 2,
+      height: foundPostsElement.rect.height + padding * 2
+    };
+
+    const postsScreenshot = await this.takePostsFrequencyScreenshot(
+      nameAddress,
+      city,
+      'posts-frequency',
+      0,
+      postsClipDimensions,
+      postsFrequencyDirectory,
+      foundPostsElement
+    );
+
+    return {
+      success: true,
+      foundElements: 1,
+      screenshots: [postsScreenshot],
+      searchedAttribute: targetPostsAttribute,
+      elementInfo: foundPostsElement
+    };
+
+  } catch (error) {
+    console.error("❌ Error handling posts frequency element:", error.message);
+    return {
+      success: false,
+      error: error.message,
+      searchedAttribute: 'kc:/local:posts'
+    };
+  }
+}
+
+
+  // NEW METHOD: Take screenshot of special element
+  async takePostsFrequencyScreenshot(
+    nameAddress,
+    city,
+    className,
+    elementIndex,
+    clipDimensions,
+    screenshotDirectory,
+    elementInfo
+  ) {
     try {
-      console.log('🎯 Looking for element with data-attrid="kc:/local:posts"...');
+      const sanitizedName = nameAddress
+        .replace(/[^a-zA-Z0-9\s]/g, "")
+        .replace(/\s+/g, "_");
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `${sanitizedName}_${className}_${elementIndex}_${timestamp}.png`;
+      const filepath = path.join(screenshotDirectory, filename);
 
-      // Target attribute to look for
-      const targetPostsAttribute = 'kc:/local:posts';
-      
-      // Check if element with the specific data-attrid exists on the page
-      const foundPostsElement = await this.page.evaluate((targetAttr) => {
-        const element = document.querySelector(`[data-attrid="${targetAttr}"]`);
-        
-        if (!element) {
-          return null;
-        }
-
-        const rect = element.getBoundingClientRect();
-        
-        // Only include visible elements
-        if (rect.width > 0 && rect.height > 0 && 
-            rect.top >= 0 && rect.left >= 0 && 
-            rect.bottom <= window.innerHeight && 
-            rect.right <= window.innerWidth) {
-          return {
-            dataAttrid: targetAttr,
-            rect: {
-              x: Math.round(rect.left),
-              y: Math.round(rect.top),
-              width: Math.round(rect.width),
-              height: Math.round(rect.height)
-            },
-            text: element.textContent?.substring(0, 250) || '', // First 250 chars for posts content
-            tagName: element.tagName.toLowerCase(),
-            className: element.className || '',
-            id: element.id || ''
-          };
-        }
-        
-        return null;
-      }, targetPostsAttribute);
-
-      if (!foundPostsElement) {
-        console.log('ℹ️ No element with posts frequency data-attrid found on the page');
-        return { 
-          success: false, 
-          reason: "No posts frequency element found",
-          searchedAttribute: targetPostsAttribute
-        };
-      }
-
-      console.log(`✅ Found posts frequency element:`, {
-        tag: foundPostsElement.tagName,
-        class: foundPostsElement.className,
-        id: foundPostsElement.id,
-        dimensions: `${foundPostsElement.rect.width}x${foundPostsElement.rect.height}`
+      // Take screenshot of the specific element area
+      await this.page.screenshot({
+        path: filepath,
+        fullPage: false,
+        type: "png",
+        clip: clipDimensions,
       });
 
-      // Take screenshot of the found posts element
-      const postsFrequencyDirectory = "./screenshots/gbp_posts_frequency_screenshots";
-      await this.ensureFolderExists(postsFrequencyDirectory);
+      console.log(`📸 posts frequency screenshot saved: ${filename}`);
+      console.log(`📐 Element dimensions: ${clipDimensions.width}x${clipDimensions.height}`);
 
-      try {
-        // Add some padding around the element for better visibility
-        const postsPadding = 20;
-        const postsClipDimensions = {
-          x: Math.max(0, foundPostsElement.rect.x - postsPadding),
-          y: Math.max(0, foundPostsElement.rect.y - postsPadding),
-          width: Math.min(1920 - foundPostsElement.rect.x + postsPadding, foundPostsElement.rect.width + (postsPadding * 2)),
-          height: Math.min(1200 - foundPostsElement.rect.y + postsPadding, foundPostsElement.rect.height + (postsPadding * 2))
-        };
-
-        console.log(`📸 Taking screenshot of posts frequency element (${foundPostsElement.tagName})`);
-        
-        // Highlight the posts element briefly
-        // await this.highlightPostsFrequencyElement();
-        await this.page.waitForTimeout(1800);
-
-        const postsScreenshot = await this.takePostsFrequencyScreenshot(
-          nameAddress,
-          city,
-          'posts-frequency',
-          0,
-          postsClipDimensions,
-          postsFrequencyDirectory,
-          foundPostsElement
-        );
-
-        // Remove highlight
-        // await this.removeHighlight();
-
-        return {
-          success: true,
-          foundElements: 1,
-          screenshots: [postsScreenshot],
-          searchedAttribute: targetPostsAttribute,
-          elementInfo: foundPostsElement
-        };
-
-      } catch (postsElementError) {
-        console.error(`❌ Error screenshotting posts frequency element:`, postsElementError.message);
-        return {
-          success: false,
-          error: postsElementError.message,
-          elementInfo: foundPostsElement,
-          searchedAttribute: targetPostsAttribute
-        };
-      }
-
+      return {
+        success: true,
+        filepath: filepath,
+        filename: filename,
+        city,
+        className: className,
+        elementIndex: elementIndex,
+        elementInfo: elementInfo,
+        type: "posts-frequency",
+        dimensions: clipDimensions,
+      };
     } catch (error) {
-      console.error("❌ Error handling posts frequency element:", error.message);
+      console.error(`❌ Failed to take posts frequency screenshot:`, error.message);
       return {
         success: false,
         error: error.message,
-        searchedAttribute: 'kc:/local:posts'
+        className: className,
+        elementIndex: elementIndex,
+        type: "posts-frequency",
       };
     }
   }
@@ -999,6 +1004,9 @@ class GoogleBusinessProfileScraper {
           break;
         case "gbp-social-links": // Handle social media presence elements directory
           screenshotDir = "./screenshots/gbp_social_links_screenshots";
+          break;
+        case "gbp-posts-frequency":
+          screenshotDir = "./screenshots/gbp_posts_frequency_screenshots";
           break;
         default:
           console.warn(`⚠️ No screenshotDir found for entity: ${entity}`);
