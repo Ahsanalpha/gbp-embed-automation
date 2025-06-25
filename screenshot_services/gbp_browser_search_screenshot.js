@@ -22,7 +22,8 @@ class GoogleBusinessProfileScraper {
       "gbp-images": [],
       "gbp-reviews": [],
       "gbp-social-links": [], // New category for special class elements
-      "gbp-posts-frequency" : []
+      "gbp-posts-frequency" : [],
+      "gbp-profile-modal" : [],
     };
   }
 
@@ -239,10 +240,11 @@ class GoogleBusinessProfileScraper {
 
       // NEW: Check for social media presence element and screenshot it
       const socialMediaElementScreenshot = await this.handleGBPLinks(
-        nameAddress, record.City
+        nameAddress,
+        record.City
       );
       const socialMediaElementResult = this.createProcessedObject(
-        'gbp-social-links',
+        "gbp-social-links",
         socialMediaElementScreenshot,
         index,
         searchTerm,
@@ -252,10 +254,11 @@ class GoogleBusinessProfileScraper {
 
       // NEW: Check for POSTS FREQUENCY element and screenshot it
       const postsFrequencyScreenshot = await this.handlePostsFrequencyElement(
-        nameAddress, record.City
+        nameAddress,
+        record.City
       );
       const postsFrequencyResult = this.createProcessedObject(
-        'gbp-posts-frequency',
+        "gbp-posts-frequency",
         postsFrequencyScreenshot,
         index,
         searchTerm,
@@ -263,6 +266,19 @@ class GoogleBusinessProfileScraper {
       );
       this.results["gbp-posts-frequency"].push(postsFrequencyResult);
 
+      // Handle Profile Modal
+      const profileModalResult = await this.handleProductsModal(
+        nameAddress,
+        record.City
+      );
+      const processedProfileModalResult = this.createProcessedObject(
+        "gbp-profile-modal",
+        profileModalResult,
+        index,
+        searchTerm,
+        record
+      );
+      this.results["gbp-profile-modal"].push(processedProfileModalResult);
     } catch (error) {
       console.error(`❌ Error searching for ${nameAddress}:`, error.message);
 
@@ -457,6 +473,83 @@ async handlePostsFrequencyElement(nameAddress, city) {
     };
   }
 }
+
+
+async handleProductsModal(nameAddress, city) {
+  try {
+    console.log('🎯 Looking for anchor tag with jsaction="trigger.QTy97"...');
+
+    // Find, scroll to, and click the anchor, returning scroll offset
+    const scrollResult = await this.page.evaluate(() => {
+      const anchor = document.querySelector('a[jsaction="trigger.QTy97"]');
+      if (!anchor) return { found: false };
+
+      anchor.scrollIntoView({ behavior: 'instant', block: 'start' });
+
+      const scrollY = window.scrollY;
+      anchor.click();
+
+      return {
+        found: true,
+        scrollY,
+      };
+    });
+
+    if (!scrollResult.found) {
+      console.log('ℹ️ No matching anchor tag found.');
+      return {
+        success: false,
+        reason: 'No anchor tag with jsaction="trigger.QTy97" found',
+        searchedAttribute: 'jsaction="trigger.QTy97"',
+      };
+    }
+
+    console.log(`✅ Anchor clicked. Window scrolled to Y offset: ${scrollResult.scrollY}`);
+    console.log("⏳ Waiting for modal to appear...");
+
+    // Wait for modal to load
+    await this.page.waitForTimeout(2500);
+
+    const modalDirectory = "./screenshots/gbp_profile_modal_screenshots";
+    await this.ensureFolderExists(modalDirectory);
+
+    // Dynamically apply scroll offset to Y coordinate
+    const baseClip = {
+      x: 550,
+      y: 80 + scrollResult.scrollY, // adjusted based on scrollY
+      width: 820,
+      height: 630,
+    };
+
+    const screenshot = await this.startScreenshotOperation(
+      nameAddress,
+      city,
+      modalDirectory,
+      baseClip,
+      "gbp_profile_modal"
+    );
+
+    await this.page.keyboard.press("Escape");
+    await this.page.waitForTimeout(1000);
+
+    return {
+      success: true,
+      screenshots: [screenshot],
+      searchedAttribute: 'jsaction="trigger.QTy97"',
+      scrollY: scrollResult.scrollY,
+    };
+  } catch (error) {
+    console.error("❌ Error handling profile modal click:", error.message);
+    return {
+      success: false,
+      error: error.message,
+      searchedAttribute: 'jsaction="trigger.QTy97"',
+    };
+  }
+}
+
+
+
 
 
   // NEW METHOD: Take screenshot of special element
@@ -1007,6 +1100,9 @@ async handlePostsFrequencyElement(nameAddress, city) {
           break;
         case "gbp-posts-frequency":
           screenshotDir = "./screenshots/gbp_posts_frequency_screenshots";
+          break;
+        case "gbp-profile-modal":
+          screenshotDir = "./screenshots/gbp_profile_modal_screenshots";
           break;
         default:
           console.warn(`⚠️ No screenshotDir found for entity: ${entity}`);
