@@ -226,45 +226,47 @@ class EnhancedGBPUrlDecoder {
   }
 
   async fetchVerifiedGoogleAddress(businessName) {
-  const url = "https://places.googleapis.com/v1/places:searchText";
+    const url = "https://places.googleapis.com/v1/places:searchText";
 
-  const headers = {
-    "Content-Type": "application/json",
-    "X-Goog-Api-Key": process.env.GOOGLE_PLACES_API,
-    "X-Goog-FieldMask":
-      "places.id,places.displayName,places.formattedAddress,places.addressComponents",
-  };
+    const headers = {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": process.env.GOOGLE_PLACES_API,
+      "X-Goog-FieldMask":
+        "places.id,places.displayName,places.formattedAddress,places.addressComponents",
+    };
 
-  const body = {
-    textQuery: businessName,
-  };
+    const body = {
+      textQuery: businessName,
+    };
 
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
 
-    if (!res.ok) {
-      throw new Error(`HTTP error placesAPI! status: ${res.status}`);
+      if (!res.ok) {
+        throw new Error(`HTTP error placesAPI! status: ${res.status}`);
+      }
+
+      const data = await res.json();
+      console.log("Response placesAPI:", JSON.stringify(data, null, 2));
+
+      // Extract city (locality) from addressComponents:
+      const place = data["places"][0];
+      const cityComponent = place.addressComponents.find((component) =>
+        component.types.includes("locality")
+      );
+      const city = cityComponent ? cityComponent.shortText : null;
+      const placeId = place["id"];
+
+      return { formattedAddress: place.formattedAddress, city, placeId };
+    } catch (err) {
+      console.error("Fetch error placesAPI:", err);
+      throw err;
     }
-
-    const data = await res.json();
-    console.log("Response placesAPI:", JSON.stringify(data, null, 2));
-    
-    // Extract city (locality) from addressComponents:
-    const place = data["places"][0];
-    const cityComponent = place.addressComponents.find(component => component.types.includes("locality"));
-    const city = cityComponent ? cityComponent.shortText : null;
-
-    return { formattedAddress: place.formattedAddress, city };
-
-  } catch (err) {
-    console.error("Fetch error placesAPI:", err);
-    throw err;
   }
-}
 
   /**
    * Enhanced URL decoding with multiple methods and validation
@@ -311,10 +313,15 @@ class EnhancedGBPUrlDecoder {
         return this.createErrorResult("PB parameter parsing failed");
       }
 
+      const googleAddressResponse = await this.fetchVerifiedGoogleAddress(
+        pbResult.businessName
+      );
+
       // Validate and enhance results
       const validatedResult = this.validateAndEnhanceResult(
         pbResult,
-        iframeUrl
+        iframeUrl,
+        googleAddressResponse.placeId
       );
 
       if (
@@ -333,9 +340,10 @@ class EnhancedGBPUrlDecoder {
         }
         return this.createErrorResult("Decoded result failed validation");
       }
-      const googleAddressResponse = await this.fetchVerifiedGoogleAddress(validatedResult.businessName)
+      
       validatedResult.address = googleAddressResponse.formattedAddress;
       validatedResult.city = googleAddressResponse.city;
+      validatedResult.placeId = googleAddressResponse.placeId;
       return validatedResult;
     } catch (error) {
       this.log(`Main decoding error: ${error.message}`);
@@ -359,10 +367,10 @@ class EnhancedGBPUrlDecoder {
   /**
    * Validate and enhance the parsing result
    */
-  validateAndEnhanceResult(pbResult, originalUrl) {
+  validateAndEnhanceResult(pbResult, originalUrl,placeIdVerified) {
     const result = {
       businessName: pbResult.businessName || "",
-      placeId: pbResult.placeId || "",
+      placeId: placeIdVerified || "",
       coordinates: pbResult.coordinates || { lat: "", lng: "" },
       address: pbResult.address || "",
       error: "",
@@ -388,7 +396,7 @@ class EnhancedGBPUrlDecoder {
     // Generate search URLs
     result.searchUrl = this.generateSearchUrl(
       result.businessName,
-      result.placeId,
+      placeIdVerified,
       result.coordinates
     );
 
@@ -407,7 +415,7 @@ class EnhancedGBPUrlDecoder {
   /**
    * Create standardized success result
    */
-  createSuccessResult(data, originalUrl) {
+  createSuccessResult(data) {
     return {
       businessName: data.businessName || "",
       searchUrl: this.generateSearchUrl(
@@ -440,15 +448,14 @@ class EnhancedGBPUrlDecoder {
   generateSearchUrl(businessName, placeId, coordinates) {
     try {
       // Priority: Place ID > Business Name > Coordinates
-      if (placeId && placeId.includes(":")) {
+      if (placeId) {
         // Format place ID for Google Maps API
-        const cleanPlaceId = placeId.replace(":", "%3A");
         if (businessName) {
           return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
             businessName
-          )}&query_place_id=${cleanPlaceId}`;
+          )}&query_place_id=${placeId}`;
         } else {
-          return `https://www.google.com/maps/place/?q=place_id:${cleanPlaceId}`;
+          return `https://www.google.com/maps/place/?q=place_id:${placeId}`;
         }
       } else if (businessName && businessName.trim().length > 0) {
         return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
