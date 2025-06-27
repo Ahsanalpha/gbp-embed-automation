@@ -58,10 +58,10 @@ class GoogleBusinessProfileScraper {
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--disable-blink-features=AutomationControlled",
-          "--disable-features=VizDisplayCompositor",
+          // "--disable-dev-shm-usage",
+          // "--disable-accelerated-2d-canvas",
+          // "--disable-blink-features=AutomationControlled",
+          // "--disable-features=VizDisplayCompositor",
           "--window-size=1920,1200",
           "--start-maximized",
           "--disable-geolocation", // Disables location entirely
@@ -203,7 +203,7 @@ class GoogleBusinessProfileScraper {
       await this.page.type('textarea[name="q"], input[name="q"]', searchQuery, {
         delay: 100,
       });
-      await this.page.waitForTimeout(500); // Brief pause before pressing Enter
+     await new Promise(resolve => setTimeout(resolve, 500)); // Brief pause before pressing Enter
       await this.page.keyboard.press("Enter");
 
       // Wait for search results to load
@@ -212,31 +212,31 @@ class GoogleBusinessProfileScraper {
       });
 
       // Additional wait for business profile to render
-      await this.page.waitForTimeout(3000);
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
       // Look for "See photos" and handle photo modal (only screenshot)
-      // const gbpImageScreenshot = await this.handleSeePhotos(nameAddress, record.City);
-      // const screenshotResult = this.createProcessedObject(
-      //   'gbp-images',
-      //   gbpImageScreenshot,
-      //   index,
-      //   searchTerm,
-      //   record
-      // );
-      // this.results["gbp-images"].push(screenshotResult);
+      const gbpImageScreenshot = await this.handleSeePhotos(nameAddress, record.City);
+      const screenshotResult = this.createProcessedObject(
+        'gbp-images',
+        gbpImageScreenshot,
+        index,
+        searchTerm,
+        record
+      );
+      this.results["gbp-images"].push(screenshotResult);
 
       // Take GBP Reviews screenshot
-      // const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
-      //   nameAddress, record.City
-      // );
-      // const reviewsScreenshotResult = this.createProcessedObject(
-      //   'gbp-reviews',
-      //   gbpReviewsScreenshot,
-      //   index,
-      //   searchTerm,
-      //   record
-      // );
-      // this.results["gbp-reviews"].push(reviewsScreenshotResult);
+      const gbpReviewsScreenshot = await this.handleReviewsScreenshot(
+        nameAddress, record.City
+      );
+      const reviewsScreenshotResult = this.createProcessedObject(
+        'gbp-reviews',
+        gbpReviewsScreenshot,
+        index,
+        searchTerm,
+        record
+      );
+      this.results["gbp-reviews"].push(reviewsScreenshotResult);
 
       // NEW: Check for social media presence element and screenshot it
       const socialMediaElementScreenshot = await this.handleGBPLinks(
@@ -286,7 +286,7 @@ class GoogleBusinessProfileScraper {
         console.log(
           `🔄 Retrying... (${retryCount + 1}/${this.options.maxRetries})`
         );
-        await this.page.waitForTimeout(5000); // Wait before retry
+        await await new Promise(resolve => setTimeout(resolve, 5000)); // Wait before retry
         return await this.searchGoogleBusiness(
           nameAddress,
           3,
@@ -508,7 +508,7 @@ async handleProductsModal(nameAddress, city) {
     console.log("⏳ Waiting for modal to appear...");
 
     // Wait for modal to load
-    await this.page.waitForTimeout(2500);
+    await new Promise(resolve => setTimeout(resolve, 2500));
 
     const modalDirectory = "./screenshots/gbp_profile_modal_screenshots";
     await this.ensureFolderExists(modalDirectory);
@@ -530,7 +530,7 @@ async handleProductsModal(nameAddress, city) {
     );
 
     await this.page.keyboard.press("Escape");
-    await this.page.waitForTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     return {
       success: true,
@@ -695,7 +695,7 @@ async handleProductsModal(nameAddress, city) {
       // Try to close any open modal
       try {
         await this.page.keyboard.press("Escape");
-        await this.page.waitForTimeout(500);
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (closeError) {
         // Ignore close errors
       }
@@ -756,6 +756,14 @@ async handleProductsModal(nameAddress, city) {
 
         if (seePhotosButton && seePhotosButton.asElement()) {
           console.log("📸 Found photos button via text search");
+          const browsePhotosElement = await this.page.$('[aria-label="Browse photos of Squeegee Car Detailing"]');
+            if (browsePhotosElement) {
+                const browsePhotosPath = path.join(__dirname, `browse-photos${1}.png`);
+                await browsePhotosElement.screenshot({ path: browsePhotosPath });
+                console.log('Browse photos screenshot taken:', browsePhotosPath);
+            } else {
+                console.log('Could not find browse photos element for screenshot');
+            }
         } else {
           seePhotosButton = null;
         }
@@ -771,7 +779,7 @@ async handleProductsModal(nameAddress, city) {
       console.log('✅ Clicked "See photos" button');
 
       // Wait for modal to appear
-      await this.page.waitForTimeout(2000);
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Wait for photo modal/gallery to load
       await this.page
@@ -787,7 +795,7 @@ async handleProductsModal(nameAddress, city) {
 
       // Extended wait for all images to load and render completely
       console.log("⏳ Waiting for images to load and render...");
-      await this.page.waitForTimeout(10000); // Increased delay for image rendering
+      await new Promise(resolve => setTimeout(resolve, 10000)); // Increased delay for image rendering
 
       const gbpImagesDirectory = "./screenshots/gbp_images_screenshots";
       const gbpImagesClipDimension = {
@@ -809,7 +817,7 @@ async handleProductsModal(nameAddress, city) {
       console.log("✅ Closed photo modal with Escape key");
 
       // Wait for modal to close
-      await this.page.waitForTimeout(1000);
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       return photoScreenshot;
     } catch (error) {
@@ -818,7 +826,7 @@ async handleProductsModal(nameAddress, city) {
       // Try to close any open modal
       try {
         await this.page.keyboard.press("Escape");
-        await this.page.waitForTimeout(500);
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (closeError) {
         // Ignore close errors
       }
@@ -833,7 +841,7 @@ async handleProductsModal(nameAddress, city) {
   async handleCookieConsent() {
     try {
       // Wait for cookie consent button and click if present
-      await this.page.waitForTimeout(1000); // Wait for page to settle
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for page to settle
 
       const cookieSelectors = [
         'button[id*="accept"]',
@@ -849,7 +857,7 @@ async handleProductsModal(nameAddress, city) {
           const cookieButton = await this.page.$(selector);
           if (cookieButton) {
             await cookieButton.click();
-            await this.page.waitForTimeout(1000);
+            await new Promise(resolve => setTimeout(resolve, 1000));
             console.log("🍪 Accepted cookie consent");
             return;
           }
@@ -901,7 +909,7 @@ async handleProductsModal(nameAddress, city) {
 
       // Add bounding box overlay to show screenshot bounds
       await this.addBoundingBox(clipDimensions);
-      await this.page.waitForTimeout(2000);
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Remove bounding box after brief appearance
       await this.removeBoundingBox();
@@ -1012,7 +1020,7 @@ async handleProductsModal(nameAddress, city) {
       }, clipDimensions);
 
       // Wait a moment for the box to render
-      await this.page.waitForTimeout(500);
+      await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error) {
       console.log("⚠️ Could not add bounding box:", error.message);
     }
@@ -1060,7 +1068,7 @@ async handleProductsModal(nameAddress, city) {
         console.log(
           `⏳ Waiting ${this.options.delayBetweenRequests}ms before next request...`
         );
-        await this.page.waitForTimeout(this.options.delayBetweenRequests);
+        await new Promise(resolve => setTimeout(resolve, this.options.delayBetweenRequests));
       }
 
     } catch (error) {
