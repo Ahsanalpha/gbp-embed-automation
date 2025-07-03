@@ -56,13 +56,13 @@ class GoogleBusinessProfileScraper {
         slowMo: this.options.slowMo,
         userDataDir: defaultProfilePath,
         args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
+          // "--no-sandbox",
+          // "--disable-setuid-sandbox",
           // "--disable-dev-shm-usage",
           // "--disable-accelerated-2d-canvas",
           // "--disable-blink-features=AutomationControlled",
           // "--disable-features=VizDisplayCompositor",
-          "--window-size=1920,1200",
+          // "--window-size=1920,1200",
           "--start-maximized",
           "--disable-geolocation", // Disables location entirely
           "--use-fake-ui-for-media-stream", // Prevents permission prompt
@@ -708,135 +708,272 @@ async handleProductsModal(nameAddress, city) {
   }
 
   //take GBP Images screenshot
-  async handleSeePhotos(nameAddress, city) {
-    try {
-      console.log('🔍 Looking for "See photos" button...');
+  //take GBP Images screenshot
+async handleSeePhotos(nameAddress, city) {
+  try {
+    console.log('🔍 Looking for "See photos" button...');
 
-      // Look for "See photos" button with various selectors
-      const seePhotosSelectors = [
-        'button:has-text("See photos")',
-        // 'a:has-text("See photos")',
-        '[role="button"]:has-text("See photos")',
-      ];
+    // Look for "See photos" button with various selectors
+    const seePhotosSelectors = [
+      'button:has-text("See photos")',
+      // 'a:has-text("See photos")',
+      '[role="button"]:has-text("See photos")',
+    ];
 
-      let seePhotosButton = null;
+    let seePhotosButton = null;
 
-      // Try each selector
-      for (const selector of seePhotosSelectors) {
-        try {
-          seePhotosButton = await this.page.$(selector);
-          if (seePhotosButton) {
-            // Verify it's actually clickable and visible
-            const isVisible = await seePhotosButton.isIntersectingViewport();
-            if (isVisible) {
-              console.log('📸 Found "See photos" button:::', selector);
-              break;
-            } else {
-              seePhotosButton = null;
-            }
+    // Try each selector
+    for (const selector of seePhotosSelectors) {
+      try {
+        seePhotosButton = await this.page.$(selector);
+        if (seePhotosButton) {
+          // Verify it's actually clickable and visible
+          const isVisible = await seePhotosButton.isIntersectingViewport();
+          if (isVisible) {
+            console.log('📸 Found "See photos" button:::', selector);
+            break;
+          } else {
+            seePhotosButton = null;
           }
-        } catch (error) {
-          // Continue to next selector
         }
+      } catch (error) {
+        // Continue to next selector
       }
+    }
 
-      // Alternative approach: look for text content
-      if (!seePhotosButton) {
-        seePhotosButton = await this.page.evaluateHandle(() => {
-          const elements = Array.from(
-            document.querySelectorAll('button, [role="button"]')
-          );
-          return elements.find(
-            (el) => el.textContent?.toLowerCase().includes("see photos")
-            //  ||
-            // el.textContent?.toLowerCase().includes('photos') ||
-            // el.getAttribute('aria-label')?.toLowerCase().includes('photos')
-          );
-        });
+    // Alternative approach: look for text content
+    if (!seePhotosButton) {
+      seePhotosButton = await this.page.evaluateHandle(() => {
+        const elements = Array.from(
+          document.querySelectorAll('button, [role="button"]')
+        );
+        return elements.find(
+          (el) => el.textContent?.toLowerCase().includes("see photos")
+          //  ||
+          // el.textContent?.toLowerCase().includes('photos') ||
+          // el.getAttribute('aria-label')?.toLowerCase().includes('photos')
+        );
+      });
 
-        if (seePhotosButton && seePhotosButton.asElement()) {
-          console.log("📸 Found photos button via text search");
-          const browsePhotosElement = await this.page.$('[aria-label="Browse photos of Squeegee Car Detailing"]');
-            if (browsePhotosElement) {
-                const browsePhotosPath = path.join(__dirname, `browse-photos${1}.png`);
-                await browsePhotosElement.screenshot({ path: browsePhotosPath });
-                console.log('Browse photos screenshot taken:', browsePhotosPath);
-            } else {
-                console.log('Could not find browse photos element for screenshot');
-            }
-        } else {
-          seePhotosButton = null;
-        }
-      }
-
-      if (!seePhotosButton) {
-        console.log('ℹ️ No "See photos" button found');
-        return { success: false, reason: "No see photos button found" };
-      }
-
-      // Click the "See photos" button
-      await seePhotosButton.click();
-      console.log('✅ Clicked "See photos" button');
-
-      // Wait for modal to appear
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Wait for photo modal/gallery to load
-      await this.page
-        .waitForSelector(
-          '[role="dialog"], .modal, [data-testid="photo-modal"]',
-          {
-            timeout: 10000,
+      if (seePhotosButton && seePhotosButton.asElement()) {
+        console.log("📸 Found photos button via text search");
+        const browsePhotosElement = await this.page.$('[aria-label="Browse photos of Squeegee Car Detailing"]');
+          if (browsePhotosElement) {
+              const browsePhotosPath = path.join(__dirname, `browse-photos${1}.png`);
+              await browsePhotosElement.screenshot({ path: browsePhotosPath });
+              console.log('Browse photos screenshot taken:', browsePhotosPath);
+          } else {
+              console.log('Could not find browse photos element for screenshot');
           }
-        )
-        .catch(() => {
-          console.log("⚠️ Photo modal selector not found, proceeding anyway");
-        });
+      } else {
+        seePhotosButton = null;
+      }
+    }
 
-      // Extended wait for all images to load and render completely
-      console.log("⏳ Waiting for images to load and render...");
-      await new Promise(resolve => setTimeout(resolve, 10000)); // Increased delay for image rendering
+    if (!seePhotosButton) {
+      console.log('ℹ️ No "See photos" button found');
+      return { success: false, reason: "No see photos button found" };
+    }
 
-      const gbpImagesDirectory = "./screenshots/gbp_images_screenshots";
-      const gbpImagesClipDimension = {
-        x: 420,
-        y: 220,
-        width: 1070,
-        height: 750,
-      };
-      const photoScreenshot = await this.startScreenshotOperation(
+    // Click the "See photos" button
+    await seePhotosButton.click();
+    console.log('✅ Clicked "See photos" button');
+
+    // Wait for modal to appear
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Wait for photo modal/gallery to load
+    await this.page
+      .waitForSelector(
+        '[role="dialog"], .modal, [data-testid="photo-modal"]',
+        {
+          timeout: 10000,
+        }
+      )
+      .catch(() => {
+        console.log("⚠️ Photo modal selector not found, proceeding anyway");
+      });
+
+    // Extended wait for all images to load and render completely
+    console.log("⏳ Waiting for images to load and render...");
+    await new Promise(resolve => setTimeout(resolve, 15000)); // Increased delay for image rendering
+
+    const gbpImagesDirectory = "./screenshots/gbp_images_screenshots";
+    const gbpImagesClipDimension = {
+      x: 420,
+      y: 220,
+      width: 1070,
+      height: 750,
+    };
+
+    // NEW: Take 5 screenshots and retain only the latest one
+    console.log("📸 Taking 5 screenshots to ensure image stability...");
+    const screenshotPaths = [];
+    
+    for (let i = 0; i < 5; i++) {
+      console.log(`📸 Taking screenshot ${i + 1}/5...`);
+      
+      // Take screenshot with unique identifier
+      const tempScreenshot = await this.takeMultipleScreenshots(
         nameAddress,
         city,
-        gbpImagesDirectory,
+        "gbp_image",
         gbpImagesClipDimension,
-        "gbp_image"
+        gbpImagesDirectory,
+        i
       );
-
-      // Close modal with Esc key
-      await this.page.keyboard.press("Escape");
-      console.log("✅ Closed photo modal with Escape key");
-
-      // Wait for modal to close
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      return photoScreenshot;
-    } catch (error) {
-      console.error("❌ Error handling see photos:", error.message);
-
-      // Try to close any open modal
-      try {
-        await this.page.keyboard.press("Escape");
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (closeError) {
-        // Ignore close errors
+      
+      if (tempScreenshot.success) {
+        screenshotPaths.push(tempScreenshot.filepath);
       }
+      
+      // Wait between screenshots to allow for any rendering changes
+      if (i < 4) { // Don't wait after the last screenshot
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
 
-      return {
+    let finalScreenshot;
+    
+    if (screenshotPaths.length > 0) {
+      // Keep the latest screenshot (last one taken)
+      const latestScreenshotPath = screenshotPaths[screenshotPaths.length - 2];
+      
+      // Delete all previous screenshots
+      for (let i = 0; i < screenshotPaths.length; i++) {
+        if(i=== screenshotPaths.length-2) {
+          continue;
+        }
+        try {
+          await fs.unlink(screenshotPaths[i]);
+          console.log(`🗑️ Deleted temporary screenshot: ${path.basename(screenshotPaths[i])}`);
+        } catch (deleteError) {
+          console.warn(`⚠️ Could not delete temporary screenshot: ${screenshotPaths[i]}`, deleteError.message);
+        }
+      }
+      
+      // Rename the final screenshot to remove the index suffix
+      const finalPath = this.generateFinalScreenshotPath(nameAddress, "gbp_image", gbpImagesDirectory);
+      try {
+        await fs.rename(latestScreenshotPath, finalPath);
+        console.log(`✅ Retained final screenshot: ${path.basename(finalPath)}`);
+        
+        finalScreenshot = {
+          success: true,
+          filepath: finalPath,
+          filename: path.basename(finalPath),
+          city,
+          type: "gbp_image",
+          dimensions: gbpImagesClipDimension,
+          screenshots_taken: screenshotPaths.length
+        };
+      } catch (renameError) {
+        console.warn(`⚠️ Could not rename final screenshot, keeping original: ${latestScreenshotPath}`);
+        finalScreenshot = {
+          success: true,
+          filepath: latestScreenshotPath,
+          filename: path.basename(latestScreenshotPath),
+          city,
+          type: "gbp_image",
+          dimensions: gbpImagesClipDimension,
+          screenshots_taken: screenshotPaths.length
+        };
+      }
+    } else {
+      finalScreenshot = {
         success: false,
-        error: error.message,
+        error: "Failed to take any screenshots",
+        screenshots_taken: 0
       };
     }
+
+    // Close modal with Esc key
+    await this.page.keyboard.press("Escape");
+    console.log("✅ Closed photo modal with Escape key");
+
+    // Wait for modal to close
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    return finalScreenshot;
+  } catch (error) {
+    console.error("❌ Error handling see photos:", error.message);
+
+    // Try to close any open modal
+    try {
+      await this.page.keyboard.press("Escape");
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (closeError) {
+      // Ignore close errors
+    }
+
+    return {
+      success: false,
+      error: error.message,
+    };
   }
+}
+
+// Helper method to take individual screenshots with index
+async takeMultipleScreenshots(
+  nameAddress,
+  city,
+  screenshotType = "photos",
+  clipDimensions,
+  screenshotDirectory,
+  screenshotIndex
+) {
+  try {
+    await this.ensureFolderExists(screenshotDirectory);
+    
+    const sanitizedName = nameAddress
+      .replace(/[^a-zA-Z0-9\s]/g, "")
+      .replace(/\s+/g, "_");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `${sanitizedName}_${screenshotType}_${screenshotIndex}_${timestamp}.png`;
+    const filepath = path.join(screenshotDirectory, filename);
+
+    // Take viewport-only screenshot (what's currently visible)
+    await this.page.screenshot({
+      path: filepath,
+      fullPage: false, // Only capture the visible viewport
+      type: "png",
+      clip: clipDimensions,
+    });
+
+    console.log(`📸 Screenshot ${screenshotIndex + 1} saved: ${filename}`);
+
+    return {
+      success: true,
+      filepath: filepath,
+      filename: filename,
+      city,
+      type: screenshotType,
+      screenshotIndex: screenshotIndex,
+      dimensions: clipDimensions,
+    };
+  } catch (error) {
+    console.error(
+      `❌ Failed to take screenshot ${screenshotIndex + 1}:`,
+      error.message
+    );
+    return {
+      success: false,
+      error: error.message,
+      type: screenshotType,
+      screenshotIndex: screenshotIndex,
+    };
+  }
+}
+
+// Helper method to generate final screenshot path without index
+generateFinalScreenshotPath(nameAddress, screenshotType, screenshotDirectory) {
+  const sanitizedName = nameAddress
+    .replace(/[^a-zA-Z0-9\s]/g, "")
+    .replace(/\s+/g, "_");
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = `${sanitizedName}_${screenshotType}_${timestamp}.png`;
+  return path.join(screenshotDirectory, filename);
+}
 
   async handleCookieConsent() {
     try {

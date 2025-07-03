@@ -232,7 +232,7 @@ class EnhancedGBPUrlDecoder {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": process.env.GOOGLE_PLACES_API,
       "X-Goog-FieldMask":
-        "places.id,places.displayName,places.formattedAddress,places.addressComponents",
+        "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location",
     };
 
     const body = {
@@ -260,8 +260,9 @@ class EnhancedGBPUrlDecoder {
       );
       const city = cityComponent ? cityComponent.shortText : null;
       const placeId = place["id"];
+      let coordinates = place["location"]
 
-      return { formattedAddress: place.formattedAddress, city, placeId };
+      return { formattedAddress: place.formattedAddress, city, placeId, coordinates };
     } catch (err) {
       console.error("Fetch error placesAPI:", err);
       throw err;
@@ -317,12 +318,18 @@ class EnhancedGBPUrlDecoder {
         pbResult.businessName
       );
 
+      const fetchNearbyPlaces = await this.fetchNearbyPlaces(googleAddressResponse.coordinates)
+      const destination_Address_Name =  `${pbResult.businessName},${googleAddressResponse.formattedAddress}`
+      
       // Validate and enhance results
       const validatedResult = this.validateAndEnhanceResult(
         pbResult,
         iframeUrl,
-        googleAddressResponse.placeId
+        googleAddressResponse.placeId,
+        fetchNearbyPlaces.formattedAddress,
+        destination_Address_Name
       );
+
 
       if (
         this.options.validateResults &&
@@ -340,10 +347,15 @@ class EnhancedGBPUrlDecoder {
         }
         return this.createErrorResult("Decoded result failed validation");
       }
-      
+
       validatedResult.address = googleAddressResponse.formattedAddress;
       validatedResult.city = googleAddressResponse.city;
       validatedResult.placeId = googleAddressResponse.placeId;
+      validatedResult.coordinates = googleAddressResponse.coordinates;
+      validatedResult.nearbyPlaceAddress = fetchNearbyPlaces.formattedAddress;
+      validatedResult.nearbyPlaceName = fetchNearbyPlaces.displayName.text;
+      validatedResult.nearbyPlaceLatitude = fetchNearbyPlaces.location.latitude;
+      validatedResult.nearbyPlaceLongitude = fetchNearbyPlaces.location.longitude;
       return validatedResult;
     } catch (error) {
       this.log(`Main decoding error: ${error.message}`);
@@ -367,7 +379,7 @@ class EnhancedGBPUrlDecoder {
   /**
    * Validate and enhance the parsing result
    */
-  validateAndEnhanceResult(pbResult, originalUrl,placeIdVerified) {
+  validateAndEnhanceResult(pbResult, originalUrl, placeIdVerified,originAddress,destinationName) {
     const result = {
       businessName: pbResult.businessName || "",
       placeId: placeIdVerified || "",
@@ -400,6 +412,10 @@ class EnhancedGBPUrlDecoder {
       result.coordinates
     );
 
+    result.gmapsSearchUrl = this.generateGmapsUrl(
+      originAddress,destinationName
+    );
+
     // Add debugging info in debug mode
     if (this.options.debug) {
       result.debugInfo = {
@@ -423,6 +439,7 @@ class EnhancedGBPUrlDecoder {
         data.placeId,
         data.coordinates
       ),
+      gmapsSearchUrl: this.generateGmapsUrl(originAddress, destinationName),
       placeId: data.placeId || "",
       coordinates: data.coordinates || { lat: "", lng: "" },
       error: "",
@@ -472,6 +489,57 @@ class EnhancedGBPUrlDecoder {
     }
   }
 
+
+  
+  //generate gmaps location trip URL
+  generateGmapsUrl(originAddress,destinationName) {
+    try {
+      if(originAddress && destinationName) {
+        return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(originAddress)}&destination=${encodeURIComponent(destinationName)}`
+      }
+    } catch (error) {
+      this.log(`Search URL generation error: ${error.message}`);
+      return "Search URL generation failed";
+    }
+  }
+
+  async fetchNearbyPlaces(coordinates) {
+    const url = "https://places.googleapis.com/v1/places:searchNearby";
+
+    const payload = {
+      includedTypes: ["restaurant","corporate_office","bank","locality"],
+      maxResultCount: 3,
+      locationRestriction: {
+        circle: {
+          center: {
+            latitude: coordinates.latitude,
+            longitude: coordinates.longitude,
+          },
+          radius: 12000.0,
+        },
+      },
+    };
+    let response;
+
+    await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": process.env.GOOGLE_PLACES_API,
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location",
+      },
+      body: JSON.stringify(payload),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        console.log("Response from Nearby Places:", data)
+        let {formattedAddress,location,displayName} = data["places"][1];
+        response = {formattedAddress,location,displayName}
+      })
+      .catch((error) => console.error("Error from Nearby Places:", error))
+      return response;
+  }
+
   /**
    * Process CSV file with enhanced error handling and validation
    */
@@ -510,8 +578,8 @@ class EnhancedGBPUrlDecoder {
           newRow.Business_Name = decodedInfo.businessName || "Not found";
           newRow.Search_URL = decodedInfo.searchUrl || "Unable to generate";
           newRow.Place_ID = decodedInfo.placeId || "Not found";
-          newRow.Latitude = decodedInfo.coordinates?.lat || "Not found";
-          newRow.Longitude = decodedInfo.coordinates?.lng || "Not found";
+          newRow.Latitude = decodedInfo.location?.latitude || "Not found";
+          newRow.Longitude = decodedInfo.location?.longitude || "Not found";
           newRow.Decoding_Status = decodedInfo.error ? "Error" : "Success";
           newRow.Decoding_Error = decodedInfo.error || "";
           newRow.Confidence_Score = this.calculateConfidenceScore(decodedInfo);
